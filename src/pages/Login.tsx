@@ -12,7 +12,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'camera' | 'processing'>('idle');
+  const [status, setStatus] = useState<'idle' | 'camera' | 'processing' | 'forgot-password'>('idle');
+  const [resetMessage, setResetMessage] = useState('');
   const setAuth = useAuthStore((state) => state.setAuth);
   
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -35,6 +36,31 @@ export default function Login() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Login failed');
       setAuth(data.token, data.user);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setError('Please enter your email address');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setResetMessage('');
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to send reset link');
+      setResetMessage(data.message);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -117,11 +143,15 @@ export default function Login() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-center">{status === 'idle' ? 'Sign In' : 'Face Verification'}</CardTitle>
+            <CardTitle className="text-center">
+              {status === 'idle' && 'Sign In'}
+              {status === 'forgot-password' && 'Reset Password'}
+              {(status === 'camera' || status === 'processing') && 'Face Verification'}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <AnimatePresence mode="wait">
-              {status === 'idle' ? (
+              {status === 'idle' && (
                 <motion.form 
                   key="form"
                   initial={{ opacity: 0, x: -20 }}
@@ -151,6 +181,15 @@ export default function Login() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
+                    <div className="flex justify-end">
+                      <button 
+                        type="button" 
+                        onClick={() => { setStatus('forgot-password'); setError(''); setResetMessage(''); }}
+                        className="text-xs text-accent hover:underline"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
                   </div>
                   <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold" size="lg" disabled={loading}>
                     {loading ? 'Authenticating...' : 'Sign In with Password'}
@@ -175,7 +214,54 @@ export default function Login() {
                     Face Login
                   </Button>
                 </motion.form>
-              ) : (
+              )}
+
+              {status === 'forgot-password' && (
+                <motion.form 
+                  key="forgot-password"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  onSubmit={handleForgotPassword} 
+                  className="space-y-4"
+                >
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
+                      {error}
+                    </div>
+                  )}
+                  {resetMessage && (
+                    <div className="p-3 rounded-xl bg-success/10 border border-success/20 text-success text-sm text-center">
+                      {resetMessage}
+                    </div>
+                  )}
+                  <p className="text-sm text-text-s text-center">
+                    Enter your email address and we'll send you a link to reset your password.
+                  </p>
+                  <div className="space-y-2">
+                    <Input
+                      type="email"
+                      placeholder="Email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold" size="lg" disabled={loading}>
+                    {loading ? 'Sending...' : 'Send Reset Link'}
+                  </Button>
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    className="w-full" 
+                    onClick={() => { setStatus('idle'); setError(''); setResetMessage(''); }}
+                  >
+                    Back to Login
+                  </Button>
+                </motion.form>
+              )}
+
+              {(status === 'camera' || status === 'processing') && (
                 <motion.div
                   key="camera"
                   initial={{ opacity: 0, x: 20 }}

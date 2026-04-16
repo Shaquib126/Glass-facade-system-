@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { format } from 'date-fns';
-import { Edit2, Trash2, X } from 'lucide-react';
+import { Edit2, Trash2, X, LogOut } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { token, logout } = useAuthStore();
@@ -118,7 +118,15 @@ export default function AdminDashboard() {
   const activeWorkers = attendance.filter(a => a.status === 'clock-in' && new Date(a.timestamp).toDateString() === new Date().toDateString()).length;
 
   return (
-    <div className="min-h-screen flex bg-bg text-text-p font-sans overflow-hidden">
+    <div className="min-h-screen flex flex-col md:flex-row bg-bg text-text-p font-sans overflow-hidden">
+      {/* Mobile Header */}
+      <div className="md:hidden flex items-center justify-between p-4 border-b border-card-border bg-card-bg z-10">
+        <div className="text-[16px] font-extrabold tracking-tight text-accent uppercase">Glass Facade</div>
+        <Button variant="ghost" size="icon" onClick={logout}>
+          <LogOut className="w-5 h-5" />
+        </Button>
+      </div>
+
       {/* Sidebar */}
       <div className="w-[240px] border-r border-card-border p-8 flex-col hidden md:flex">
         <div className="text-[18px] font-extrabold tracking-tight text-accent mb-12 uppercase">Glass Facade</div>

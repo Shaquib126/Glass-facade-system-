@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,6 +48,8 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: 'user' },
   name: String,
   faceDescriptor: [Number],
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
   createdAt: { type: Date, default: Date.now }
 });
 const User = mongoose.model('User', userSchema);
@@ -187,6 +190,66 @@ app.post('/api/auth/login-face', async (req: any, res: any) => {
       }
     });
   } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/auth/forgot-password', async (req: any, res: any) => {
+  try {
+    const { email } = req.body;
+    const user: any = await User.findOne({ email });
+    
+    if (!user) {
+      // Return success even if user not found to prevent email enumeration
+      return res.json({ message: 'If that email is in our system, we have sent a password reset link.' });
+    }
+
+    const token = crypto.randomBytes(20).toString('hex');
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    await user.save();
+
+    // In a real application, send this via email (e.g., using SendGrid, Nodemailer)
+    // For this environment, we'll log it and return it for testing purposes
+    const resetUrl = `http://${req.headers.host}/reset-password?token=${token}`;
+    console.log(`\n=== PASSWORD RESET LINK ===\nFor user: ${email}\nLink: ${resetUrl}\n===========================\n`);
+
+    res.json({ 
+      message: 'If that email is in our system, we have sent a password reset link.',
+      _dev_token: token // Included for testing in AI Studio without real email
+    });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req: any, res: any) => {
+  try {
+    const { token, newPassword } = req.body;
+    
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: 'Token and new password are required' });
+    }
+
+    const user: any = await User.findOne({ 
+      resetPasswordToken: token, 
+      resetPasswordExpires: { $gt: Date.now() } 
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Password reset token is invalid or has expired.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ message: 'Your password has been successfully reset. You can now log in.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
