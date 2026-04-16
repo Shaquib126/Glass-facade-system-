@@ -28,10 +28,18 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/glass-
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+let dbConnectionError = 'Connecting...';
+
 // Database setup
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .then(() => {
+    console.log('Connected to MongoDB');
+    dbConnectionError = '';
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', err);
+    dbConnectionError = err.message || String(err);
+  });
 
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
@@ -111,7 +119,7 @@ function euclideanDistance(desc1: number[], desc2: number[]) {
 app.post('/api/auth/login', async (req: any, res: any) => {
   try {
     if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({ message: 'Database not connected. Please check MONGODB_URI secret and Atlas IP whitelist.' });
+      return res.status(500).json({ message: `Database Error: ${dbConnectionError || 'Not connected'}. Please check your MONGODB_URI secret.` });
     }
 
     const { email, password } = req.body;
