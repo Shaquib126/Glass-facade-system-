@@ -5,7 +5,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Datastore from 'nedb-promises';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
@@ -23,32 +23,61 @@ const io = new Server(httpServer, {
 
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-glass-facade';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/glass-facade';
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // Database setup
-const db = {
-  users: Datastore.create({ filename: path.join(__dirname, 'data', 'users.db'), autoload: true }),
-  attendance: Datastore.create({ filename: path.join(__dirname, 'data', 'attendance.db'), autoload: true })
-};
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  role: { type: String, default: 'user' },
+  name: String,
+  faceDescriptor: [Number],
+  createdAt: { type: Date, default: Date.now }
+});
+const User = mongoose.model('User', userSchema);
+
+const attendanceSchema = new mongoose.Schema({
+  userId: String,
+  userEmail: String,
+  status: String,
+  location: {
+    lat: Number,
+    lng: Number
+  },
+  timestamp: String,
+  offline: Boolean,
+  createdAt: { type: Date, default: Date.now }
+});
+const Attendance = mongoose.model('Attendance', attendanceSchema);
 
 // Seed admin user
 async function seedAdmin() {
-  const adminExists = await db.users.findOne({ role: 'admin' });
-  if (!adminExists) {
-    const hashedPassword = await bcrypt.hash('admin123', 10);
-    await db.users.insert({
-      email: 'admin@glassfacade.com',
-      password: hashedPassword,
-      role: 'admin',
-      name: 'Admin User',
-      createdAt: new Date()
-    });
-    console.log('Admin user seeded: admin@glassfacade.com / admin123');
+  try {
+    const adminExists = await User.findOne({ role: 'admin' });
+    if (!adminExists) {
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      await User.create({
+        email: 'admin@glassfacade.com',
+        password: hashedPassword,
+        role: 'admin',
+        name: 'Admin User'
+      });
+      console.log('Admin user seeded: admin@glassfacade.com / admin123');
+    }
+  } catch (err) {
+    console.error('Error seeding admin:', err);
   }
 }
-seedAdmin();
+mongoose.connection.once('open', () => {
+  seedAdmin();
+});
 
 // Middleware to verify JWT
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -73,7 +102,7 @@ const requireAdmin = (req: any, res: any, next: any) => {
 app.post('/api/auth/login', async (req: any, res: any) => {
   try {
     const { email, password } = req.body;
-    const user: any = await db.users.findOne({ email });
+    const user: any = await User.findOne({ email });
     
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
@@ -93,7 +122,7 @@ app.post('/api/auth/login', async (req: any, res: any) => {
         email: user.email,
         role: user.role,
         name: user.name,
-        hasFaceDescriptor: !!user.faceDescriptor
+        hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
       }
     });
   } catch (error) {
@@ -105,20 +134,19 @@ app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any,
   try {
     const { email, password, name, role, faceDescriptor } = req.body;
     
-    const existingUser = await db.users.findOne({ email });
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
     
-    const newUser: any = await db.users.insert({
+    const newUser: any = await User.create({
       email,
       password: hashedPassword,
       name,
       role: role || 'user',
-      faceDescriptor: faceDescriptor || null,
-      createdAt: new Date()
+      faceDescriptor: faceDescriptor || null
     });
 
     res.status(201).json({ message: 'User created successfully', userId: newUser._id });
@@ -129,7 +157,7 @@ app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any,
 
 app.get('/api/users', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const users = await db.users.find({}, { password: 0 });
+    const users = await User.find({}, { password: 0 });
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -138,7 +166,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req: any, res: any
 
 app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    await db.users.remove({ _id: req.params.id }, {});
+    await User.deleteOne({ _id: req.params.id });
     res.json({ message: 'User deleted' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -147,8 +175,8 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req: any, r
 
 app.get('/api/users/me/descriptor', authenticateToken, async (req: any, res: any) => {
   try {
-    const user: any = await db.users.findOne({ _id: req.user.id });
-    if (!user || !user.faceDescriptor) {
+    const user: any = await User.findOne({ _id: req.user.id });
+    if (!user || !user.faceDescriptor || user.faceDescriptor.length === 0) {
       return res.status(404).json({ message: 'Face descriptor not found' });
     }
     res.json({ faceDescriptor: user.faceDescriptor });
@@ -160,7 +188,7 @@ app.get('/api/users/me/descriptor', authenticateToken, async (req: any, res: any
 app.post('/api/users/me/descriptor', authenticateToken, async (req: any, res: any) => {
   try {
     const { faceDescriptor } = req.body;
-    await db.users.update({ _id: req.user.id }, { $set: { faceDescriptor } });
+    await User.updateOne({ _id: req.user.id }, { $set: { faceDescriptor } });
     res.json({ message: 'Face descriptor updated' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -171,14 +199,13 @@ app.post('/api/attendance', authenticateToken, async (req: any, res: any) => {
   try {
     const { status, location, timestamp, offline } = req.body;
     
-    const record = await db.attendance.insert({
+    const record = await Attendance.create({
       userId: req.user.id,
       userEmail: req.user.email,
       status, // 'clock-in' or 'clock-out'
       location, // { lat, lng }
       timestamp: timestamp || new Date().toISOString(),
-      offline: !!offline,
-      createdAt: new Date()
+      offline: !!offline
     });
 
     // Broadcast to admins
@@ -197,14 +224,13 @@ app.post('/api/attendance/sync', authenticateToken, async (req: any, res: any) =
 
     const inserted = [];
     for (const record of records) {
-      const newRecord = await db.attendance.insert({
+      const newRecord = await Attendance.create({
         userId: req.user.id,
         userEmail: req.user.email,
         status: record.status,
         location: record.location,
         timestamp: record.timestamp,
-        offline: true,
-        createdAt: new Date()
+        offline: true
       });
       inserted.push(newRecord);
       io.emit('attendance_update', newRecord);
@@ -218,7 +244,7 @@ app.post('/api/attendance/sync', authenticateToken, async (req: any, res: any) =
 
 app.get('/api/attendance', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const records = await db.attendance.find({}).sort({ timestamp: -1 }).limit(100);
+    const records = await Attendance.find({}).sort({ timestamp: -1 }).limit(100);
     res.json(records);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -227,7 +253,7 @@ app.get('/api/attendance', authenticateToken, requireAdmin, async (req: any, res
 
 app.get('/api/attendance/me', authenticateToken, async (req: any, res: any) => {
   try {
-    const records = await db.attendance.find({ userId: req.user.id }).sort({ timestamp: -1 }).limit(20);
+    const records = await Attendance.find({ userId: req.user.id }).sort({ timestamp: -1 }).limit(20);
     res.json(records);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

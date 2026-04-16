@@ -4,7 +4,7 @@ import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { Camera, MapPin, CheckCircle2, XCircle, LogOut } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
-import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
+import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from './geo';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function WorkerDashboard() {
