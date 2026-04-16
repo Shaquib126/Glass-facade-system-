@@ -15,10 +15,9 @@ export default function App() {
 
   // Simple routing for reset password
 
-if(window.location.pathname.startsWith('/reset-password')) {
- 
+if (window.location.pathname === '/reset-password') {
     return <ResetPassword />;
-  }
+}
 
   if (!token || !user) {
     return <Login />;
