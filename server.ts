@@ -221,7 +221,7 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
         });
 
         // Live website ka link
-        const liveResetUrl = `https://em.onrender.com/reset-password/${token}`;
+        const liveResetUrl = `https://em.onrender.com/reset-password?token=${token}`;
 
         const mailOptions = {
             from: process.env.EMAIL_USER,
