@@ -14,7 +14,9 @@ export default function App() {
   const { token, user } = useAuthStore();
 
   // Simple routing for reset password
-  if (window.location.pathname === '/reset-password') {
+
+if(window.location.pathname.startsWith('/reset-password')) {
+ 
     return <ResetPassword />;
   }
 
