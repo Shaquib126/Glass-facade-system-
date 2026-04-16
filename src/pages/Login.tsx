@@ -1,17 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../store';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
-import { motion } from 'framer-motion';
-import { HardHat } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { HardHat, ScanFace, Camera, XCircle } from 'lucide-react';
+import { getFaceDescriptor, loadModels } from '../lib/faceApi';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'camera' | 'processing'>('idle');
   const setAuth = useAuthStore((state) => state.setAuth);
+  
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    loadModels().catch(console.error);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,6 +39,61 @@ export default function Login() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startFaceLogin = async () => {
+    if (!email) {
+      setError('Please enter your email first to use face login');
+      return;
+    }
+    setError('');
+    setStatus('camera');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      setStatus('idle');
+      setError('Camera access denied');
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const handleFaceCapture = async () => {
+    if (!videoRef.current) return;
+    setStatus('processing');
+    setError('');
+
+    try {
+      const descriptor = await getFaceDescriptor(videoRef.current);
+      stopCamera();
+
+      if (!descriptor) {
+        throw new Error('No face detected. Please try again.');
+      }
+
+      const res = await fetch('/api/auth/login-face', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, faceDescriptor: Array.from(descriptor) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Face login failed');
+      
+      setAuth(data.token, data.user);
+    } catch (err: any) {
+      stopCamera();
+      setStatus('idle');
+      setError(err.message);
     }
   };
 
@@ -53,37 +117,120 @@ export default function Login() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-center">Sign In</CardTitle>
+            <CardTitle className="text-center">{status === 'idle' ? 'Sign In' : 'Face Verification'}</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              {error && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
-                  {error}
-                </div>
+            <AnimatePresence mode="wait">
+              {status === 'idle' ? (
+                <motion.form 
+                  key="form"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  onSubmit={handleLogin} 
+                  className="space-y-4"
+                >
+                  {error && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
+                      {error}
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Input
+                      type="email"
+                      placeholder="Email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      type="password"
+                      placeholder="Password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                  </div>
+                  <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold" size="lg" disabled={loading}>
+                    {loading ? 'Authenticating...' : 'Sign In with Password'}
+                  </Button>
+                  
+                  <div className="relative my-6">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-card-border"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card-bg px-2 text-text-s">Or continue with</span>
+                    </div>
+                  </div>
+
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    className="w-full h-14 rounded-2xl text-lg font-semibold" 
+                    onClick={startFaceLogin}
+                  >
+                    <ScanFace className="w-5 h-5 mr-2" />
+                    Face Login
+                  </Button>
+                </motion.form>
+              ) : (
+                <motion.div
+                  key="camera"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="flex flex-col items-center space-y-6"
+                >
+                  {error && (
+                    <div className="p-3 w-full rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
+                      {error}
+                    </div>
+                  )}
+                  <div className="relative w-full aspect-[3/4] max-w-sm rounded-3xl overflow-hidden bg-black border border-card-border">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 border-4 border-accent/50 rounded-3xl pointer-events-none" />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-48 h-64 border-2 border-dashed border-white/50 rounded-full" />
+                    </div>
+                  </div>
+                  <p className="text-center text-text-s">
+                    {status === 'processing' ? 'Verifying identity...' : 'Position your face in the frame'}
+                  </p>
+                  <div className="flex gap-4 w-full">
+                    <Button 
+                      variant="outline" 
+                      className="flex-1" 
+                      onClick={() => { stopCamera(); setStatus('idle'); }}
+                      disabled={status === 'processing'}
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      className="flex-1 bg-accent hover:bg-accent/90 text-black" 
+                      onClick={handleFaceCapture}
+                      disabled={status === 'processing'}
+                    >
+                      {status === 'processing' ? (
+                        <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                      ) : (
+                        <>
+                          <Camera className="w-5 h-5 mr-2" />
+                          Verify
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </motion.div>
               )}
-              <div className="space-y-2">
-                <Input
-                  type="email"
-                  placeholder="Email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold" size="lg" disabled={loading}>
-                {loading ? 'Authenticating...' : 'Sign In'}
-              </Button>
-            </form>
+            </AnimatePresence>
           </CardContent>
         </Card>
       </motion.div>

@@ -99,8 +99,21 @@ const requireAdmin = (req: any, res: any, next: any) => {
 };
 
 // API Routes
+function euclideanDistance(desc1: number[], desc2: number[]) {
+  if (desc1.length !== desc2.length) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < desc1.length; i++) {
+    sum += Math.pow(desc1[i] - desc2[i], 2);
+  }
+  return Math.sqrt(sum);
+}
+
 app.post('/api/auth/login', async (req: any, res: any) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(500).json({ message: 'Database not connected. Please check MONGODB_URI secret and Atlas IP whitelist.' });
+    }
+
     const { email, password } = req.body;
     const user: any = await User.findOne({ email });
     
@@ -123,6 +136,46 @@ app.post('/api/auth/login', async (req: any, res: any) => {
         role: user.role,
         name: user.name,
         hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
+      }
+    });
+  } catch (error: any) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+});
+
+app.post('/api/auth/login-face', async (req: any, res: any) => {
+  try {
+    const { email, faceDescriptor } = req.body;
+    if (!email || !faceDescriptor) {
+      return res.status(400).json({ message: 'Email and face scan required' });
+    }
+
+    const user: any = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(400).json({ message: 'User not found' });
+    }
+
+    if (!user.faceDescriptor || user.faceDescriptor.length === 0) {
+      return res.status(400).json({ message: 'No face profile set up for this user' });
+    }
+
+    const distance = euclideanDistance(faceDescriptor, user.faceDescriptor);
+    if (distance > 0.5) { // 0.5 is a standard strict threshold for face-api.js
+      return res.status(401).json({ message: 'Face verification failed' });
+    }
+
+    const token = jwt.sign({ id: user._id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
+    
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        name: user.name,
+        hasFaceDescriptor: true
       }
     });
   } catch (error) {
@@ -159,6 +212,23 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req: any, res: any
   try {
     const users = await User.find({}, { password: 0 });
     res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/api/users/:id', authenticateToken, requireAdmin, async (req: any, res: any) => {
+  try {
+    const { name, email, role } = req.body;
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { name, email, role },
+      { new: true, select: '-password' }
+    );
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(updatedUser);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }

@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuthStore, useOfflineStore } from '../store';
 import { Button } from '../components/ui/Button';
-import { Card, CardContent } from '../components/ui/Card';
-import { Camera, MapPin, CheckCircle2, XCircle, LogOut } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
-import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from './geo';
+import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
+import { format } from 'date-fns';
 
 export default function WorkerDashboard() {
   const { user, token, logout, updateUser } = useAuthStore();
@@ -13,13 +14,29 @@ export default function WorkerDashboard() {
   const [status, setStatus] = useState<'idle' | 'camera' | 'processing' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [actionType, setActionType] = useState<'clock-in' | 'clock-out' | null>(null);
+  const [view, setView] = useState<'main' | 'history'>('main');
+  const [history, setHistory] = useState<any[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     loadModels().catch(console.error);
     syncOfflineData();
+    fetchHistory();
   }, []);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch('/api/attendance/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setHistory(await res.json());
+      }
+    } catch (e) {
+      console.error('Failed to fetch history', e);
+    }
+  };
 
   const syncOfflineData = async () => {
     if (queue.length === 0 || !navigator.onLine) return;
@@ -122,6 +139,7 @@ export default function WorkerDashboard() {
           body: JSON.stringify(record),
         });
         if (!attRes.ok) throw new Error('Failed to record attendance');
+        fetchHistory(); // Refresh history after successful clock-in/out
       } else {
         addToQueue(record);
       }
@@ -145,14 +163,58 @@ export default function WorkerDashboard() {
           <h1 className="text-xl font-bold">Hello, {user?.name}</h1>
           <p className="text-sm text-text-s">{new Date().toLocaleDateString()}</p>
         </div>
-        <Button variant="ghost" size="icon" onClick={logout}>
-          <LogOut className="w-5 h-5" />
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="icon" onClick={() => setView(view === 'main' ? 'history' : 'main')}>
+            {view === 'main' ? <History className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={logout}>
+            <LogOut className="w-5 h-5" />
+          </Button>
+        </div>
       </header>
 
       <main className="flex-1 p-6 flex flex-col justify-center max-w-md mx-auto w-full">
         <AnimatePresence mode="wait">
-          {status === 'idle' && (
+          {view === 'history' && (
+            <motion.div
+              key="history"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="flex-1 flex flex-col"
+            >
+              <Card className="flex-1 flex flex-col max-h-[70vh]">
+                <CardHeader>
+                  <CardTitle>My Attendance History</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto -mx-6 px-6">
+                  <div className="space-y-0">
+                    {history.map((record, i) => (
+                      <div key={i} className="flex items-center justify-between py-3 border-b border-card-border last:border-0">
+                        <div>
+                          <p className="font-medium text-[14px]">
+                            {record.status === 'clock-in' ? 'Clocked In' : 'Clocked Out'}
+                          </p>
+                          <p className="text-[11px] text-text-s">
+                            {format(new Date(record.timestamp), 'MMM d, yyyy • hh:mm a')}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-success">
+                          <MapPin className="w-3 h-3" />
+                          Site Verified
+                        </div>
+                      </div>
+                    ))}
+                    {history.length === 0 && (
+                      <p className="text-text-s text-center py-8 text-sm">No attendance records found.</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {view === 'main' && status === 'idle' && (
             <motion.div
               key="idle"
               initial={{ opacity: 0, scale: 0.95 }}
@@ -188,7 +250,7 @@ export default function WorkerDashboard() {
             </motion.div>
           )}
 
-          {status === 'camera' && (
+          {view === 'main' && status === 'camera' && (
             <motion.div
               key="camera"
               initial={{ opacity: 0, y: 20 }}
@@ -222,7 +284,7 @@ export default function WorkerDashboard() {
             </motion.div>
           )}
 
-          {(status === 'processing' || status === 'success' || status === 'error') && (
+          {view === 'main' && (status === 'processing' || status === 'success' || status === 'error') && (
             <motion.div
               key="status"
               initial={{ opacity: 0, scale: 0.9 }}
