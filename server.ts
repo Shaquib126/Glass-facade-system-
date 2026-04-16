@@ -210,15 +210,43 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
     await user.save();
 
-    // In a real application, send this via email (e.g., using SendGrid, Nodemailer)
-    // For this environment, we'll log it and return it for testing purposes
-    const resetUrl = `http://${req.headers.host}/reset-password?token=${token}`;
-    console.log(`\n=== PASSWORD RESET LINK ===\nFor user: ${email}\nLink: ${resetUrl}\n===========================\n`);
+            // Yahan se aapka naya Nodemailer code shuru hoga (Line 213 ki jagah par)
+        
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
+            }
+        });
 
-    res.json({ 
-      message: 'If that email is in our system, we have sent a password reset link.',
-      _dev_token: token // Included for testing in AI Studio without real email
-    });
+        // Live website ka link
+        const liveResetUrl = `https://em.onrender.com/reset-password/${token}`;
+
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: user.email,
+            subject: 'Glass Facade - Password Reset Request',
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h3>Password Reset</h3>
+                    <p>Aapne apna password reset karne ki request ki hai. Naya password set karne ke liye neeche diye gaye link par click karein:</p>
+                    <br>
+                    <a href="${liveResetUrl}" style="background-color: #00e5ff; color: black; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Reset Password</a>
+                    <br><br>
+                    <p style="color: #555;">Agar aapne yeh request nahi ki hai, toh is email ko ignore karein.</p>
+                </div>
+            `
+        };
+
+        // Email send karna
+        await transporter.sendMail(mailOptions);
+
+        // Frontend ko success message bhejna (yeh res.json line 220/221 ki jagah le lega)
+        res.json({ 
+            message: 'If that email is in our system, we have sent a password reset link.' 
+        });
+
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ message: 'Server error' });
