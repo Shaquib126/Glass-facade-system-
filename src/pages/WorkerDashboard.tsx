@@ -232,10 +232,26 @@ export default function WorkerDashboard() {
         }
 
         if (!isWithinAnySite) {
+          fetch('/api/alerts', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+             body: JSON.stringify({ type: 'geo-breach', message: `Geo-fence breach attempt: Worker tried to clock ${actionType} outside all active site bounds (Nearest was ${Math.round(closestDistance)}m away).` })
+          }).catch(console.error);
+
           throw new Error(`Too far from any site (Closest is ${Math.round(closestDistance)}m away)`);
         }
       } catch (geoErr: any) {
         throw new Error(geoErr.message || 'Location verification failed');
+      }
+
+      // Check for unusual activity hours (before 5 AM or after 8 PM)
+      const currentHour = new Date().getHours();
+      if (currentHour < 5 || currentHour > 20) {
+          fetch('/api/alerts', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+             body: JSON.stringify({ type: 'unusual-time', message: `Unusual time: Worker clocked ${actionType} at ${format(new Date(), 'hh:mm a')}.` })
+          }).catch(console.error);
       }
 
       // 2. Get Face Descriptor from the captured canvas

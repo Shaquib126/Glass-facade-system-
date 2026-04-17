@@ -5,13 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { format } from 'date-fns';
-import { Edit2, Trash2, X, LogOut, Filter, Download } from 'lucide-react';
+import { Edit2, Trash2, X, LogOut, Filter, Download, Bell, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function AdminDashboard() {
   const { token, user, logout } = useAuthStore();
   const [users, setUsers] = useState<any[]>([]);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [sites, setSites] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [showNotificationToast, setShowNotificationToast] = useState<{message: string, show: boolean}>({message: '', show: false});
+  const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   
   // Filtering state
   const [filterStartDate, setFilterStartDate] = useState('');
@@ -32,20 +36,49 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchData();
+    fetchAlerts();
     
     socket.connect();
     socket.on('attendance_update', (record) => {
       setAttendance((prev) => [record, ...prev].slice(0, 100));
     });
 
+    socket.on('new_alert', (alert) => {
+      setAlerts((prev) => [alert, ...prev].slice(0, 50));
+      setShowNotificationToast({ message: alert.message, show: true });
+      setTimeout(() => setShowNotificationToast({ message: '', show: false }), 5000);
+    });
+
     return () => {
       socket.off('attendance_update');
+      socket.off('new_alert');
       socket.disconnect();
     };
   }, []);
 
   const canManageUsers = user?.role === 'admin';
   const canManageSites = user?.role === 'admin' || user?.role === 'manager';
+
+  const fetchAlerts = async () => {
+    try {
+      const res = await fetch('/api/alerts', { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setAlerts(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const markAlertAsRead = async (id: string) => {
+    try {
+      await fetch(`/api/alerts/${id}/read`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAlerts(prev => prev.map(a => a._id === id ? { ...a, read: true } : a));
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -284,12 +317,36 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-bg text-text-p font-sans overflow-hidden">
+      {/* Toast Notification for New Alerts */}
+      <AnimatePresence>
+        {showNotificationToast.show && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -50, scale: 0.9 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-red-500 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-3 font-medium cursor-pointer"
+            onClick={() => setIsAlertsOpen(true)}
+          >
+            <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+            <span className="text-sm">{showNotificationToast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-card-border bg-card-bg z-10">
         <div className="text-[16px] font-extrabold tracking-tight text-accent uppercase">Glass Facade</div>
-        <Button variant="ghost" size="icon" onClick={logout}>
-          <LogOut className="w-5 h-5" />
-        </Button>
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" className="relative text-text-s" onClick={() => setIsAlertsOpen(true)}>
+             <Bell className="w-5 h-5" />
+             {alerts.filter(a => !a.read).length > 0 && (
+               <span className="absolute top-1 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
+             )}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={logout}>
+            <LogOut className="w-5 h-5" />
+          </Button>
+        </div>
       </div>
 
       {/* Sidebar */}
@@ -298,6 +355,19 @@ export default function AdminDashboard() {
         <div className="py-3 text-[14px] text-text-p font-semibold flex items-center gap-3 cursor-pointer">
           <div className="w-1.5 h-1.5 rounded-full bg-accent"></div>
           Overview
+        </div>
+        <div 
+          className="py-3 text-[14px] text-text-s cursor-pointer flex items-center justify-between group hover:text-text-p transition-colors"
+          onClick={() => setIsAlertsOpen(true)}
+        >
+          <div className="flex items-center gap-3">
+             <Bell className="w-4 h-4" /> Alerts
+          </div>
+          {alerts.filter(a => !a.read).length > 0 && (
+            <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+              {alerts.filter(a => !a.read).length}
+            </span>
+          )}
         </div>
         <div className="py-3 text-[14px] text-text-s cursor-pointer flex items-center gap-3">Field Workers</div>
         <div className="py-3 text-[14px] text-text-s cursor-pointer flex items-center gap-3">Site Geo-fencing</div>
@@ -311,229 +381,261 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <div className="flex-1 p-8 overflow-y-auto">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5 max-w-6xl mx-auto">
-          
-          <div className="col-span-1 md:col-span-4 flex justify-between items-end mb-2">
+        <div className="max-w-6xl mx-auto space-y-6">
+          <div className="flex justify-between items-end mb-2">
             <div>
               <h1 className="text-[28px] font-bold tracking-tight">Command Center</h1>
               <p className="text-[14px] text-text-s">Glass Facade System</p>
             </div>
-            <div className="bg-success/10 border border-success/20 text-success px-3 py-1.5 rounded-full text-xs font-semibold">
-              System Live: 99.9%
+            <div className="bg-success/10 border border-success/20 text-success px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-2 shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span>
+              System Live
             </div>
           </div>
 
-          {/* Bento 1: Stats */}
-          <Card className="col-span-1 md:col-span-2 flex justify-around items-center p-0 py-6">
-            <div className="text-center">
-              <div className="text-[36px] font-bold mb-1">{users.length}</div>
-              <div className="text-[12px] text-text-s">Total Users</div>
-            </div>
-            <div className="w-px h-10 bg-card-border"></div>
-            <div className="text-center">
-              <div className="text-[36px] font-bold mb-1">{activeWorkers}</div>
-              <div className="text-[12px] text-text-s">Active Today</div>
-            </div>
-            <div className="w-px h-10 bg-card-border"></div>
-            <div className="text-center">
-              <div className="text-[36px] font-bold mb-1 text-accent">Online</div>
-              <div className="text-[12px] text-text-s">Site Status</div>
-            </div>
-          </Card>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* LEFT COLUMN: Takes up 2/3 of the space on large screens */}
+            <div className="lg:col-span-2 flex flex-col gap-6">
+              
+              {/* Bento 1: Stats */}
+              <Card className="flex justify-around items-center p-0 py-6 bg-card-bg shadow-sm">
+                <div className="text-center">
+                  <div className="text-[36px] font-bold mb-1">{users.length}</div>
+                  <div className="text-[12px] text-text-s">Total Users</div>
+                </div>
+                <div className="w-px h-10 bg-card-border"></div>
+                <div className="text-center">
+                  <div className="text-[36px] font-bold mb-1">{activeWorkers}</div>
+                  <div className="text-[12px] text-text-s">Active Today</div>
+                </div>
+                <div className="w-px h-10 bg-card-border"></div>
+                <div className="text-center">
+                  <div className="text-[36px] font-bold mb-1 text-accent">99%</div>
+                  <div className="text-[12px] text-text-s">Uptime</div>
+                </div>
+              </Card>
 
-          {/* Bento 2: Live Activity Feed & Filters */}
-          <Card className="col-span-1 md:col-span-1 md:row-span-2 flex flex-col">
-            <CardHeader className="pb-3">
-              <CardTitle>{isFiltering ? 'Filtered Records' : 'Live Activity Feed'}</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col flex-1 overflow-hidden p-0">
-              {/* Filters Section */}
-              <div className="px-6 pb-4 border-b border-card-border bg-card-bg/50">
-                <form onSubmit={applyFilters} className="space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input 
-                      type="date" 
-                      className="h-8 text-xs bg-bg" 
-                      value={filterStartDate}
-                      onChange={e => setFilterStartDate(e.target.value)}
-                    />
-                    <Input 
-                      type="date" 
-                      className="h-8 text-xs bg-bg" 
-                      value={filterEndDate}
-                      onChange={e => setFilterEndDate(e.target.value)}
-                    />
-                  </div>
-                  <select 
-                    className="flex h-8 w-full rounded-md border border-card-border bg-bg px-2 py-1 text-xs text-text-p focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/20"
-                    value={filterUserId}
-                    onChange={e => setFilterUserId(e.target.value)}
-                  >
-                    <option value="all">All Workers</option>
-                    {users.map(u => (
-                      <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
-                    ))}
-                  </select>
-                  <div className="flex gap-2">
-                    <Button type="submit" size="sm" className="h-8 flex-1 text-xs bg-accent/10 text-accent hover:bg-accent/20">
-                      <Filter className="w-3 h-3 mr-1" /> Filter
-                    </Button>
-                    {isFiltering && (
-                      <Button type="button" size="sm" variant="outline" className="h-8 flex-1 text-xs" onClick={clearFilters}>
-                        Clear
-                      </Button>
-                    )}
-                  </div>
-                </form>
-              </div>
-
-              {/* Feed Content */}
-              <div className="flex-1 overflow-y-auto px-6">
-                <div className="space-y-0">
-                  {attendance.map((record, i) => (
-                    <div key={record._id || i} className="flex items-center gap-3 py-3 border-b border-card-border last:border-0">
-                    <div className="w-8 h-8 rounded-lg bg-[#222] border border-card-border flex items-center justify-center text-xs">
-                      {record.userEmail.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[14px] font-medium truncate">{record.userEmail}</div>
-                      <div className="text-[11px] text-text-s truncate">
-                        {record.status === 'clock-in' ? 'Clocked In' : 'Clocked Out'} • {format(new Date(record.timestamp), 'hh:mm a')}
+              {/* Bento 2: Live Activity Feed & Filters */}
+              <Card className="flex flex-col h-[450px] shadow-sm">
+                <CardHeader className="pb-3 border-b border-card-border/50">
+                  <CardTitle>{isFiltering ? 'Filtered Records' : 'Live Activity Feed'}</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col flex-1 overflow-hidden p-0">
+                  {/* Filters Section */}
+                  <div className="px-6 py-4 border-b border-card-border bg-card-bg/50">
+                    <form onSubmit={applyFilters} className="flex flex-col sm:flex-row gap-3">
+                      <div className="flex gap-2 flex-col sm:flex-row flex-1">
+                        <Input 
+                          type="date" 
+                          className="h-9 text-xs bg-bg flex-1" 
+                          value={filterStartDate}
+                          onChange={e => setFilterStartDate(e.target.value)}
+                        />
+                        <Input 
+                          type="date" 
+                          className="h-9 text-xs bg-bg flex-1" 
+                          value={filterEndDate}
+                          onChange={e => setFilterEndDate(e.target.value)}
+                        />
                       </div>
-                      <div className="flex items-center gap-2 text-[12px] text-success mt-1">
-                        <div className="w-3.5 h-3.5 border-2 border-success rounded-[3px]"></div>
-                        Verified
+                      <select 
+                        className="flex h-9 w-full sm:w-40 rounded-md border border-card-border bg-bg px-2 py-1 text-xs text-text-p focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/20"
+                        value={filterUserId}
+                        onChange={e => setFilterUserId(e.target.value)}
+                      >
+                        <option value="all">All Workers</option>
+                        {users.map(u => (
+                          <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
+                        ))}
+                      </select>
+                      <div className="flex gap-2">
+                        <Button type="submit" size="sm" className="h-9 px-4 text-xs bg-accent/10 text-accent hover:bg-accent/20">
+                          <Filter className="w-3.5 h-3.5 mr-1" /> Filter
+                        </Button>
+                        {isFiltering && (
+                          <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" onClick={clearFilters}>
+                            Clear
+                          </Button>
+                        )}
                       </div>
-                    </div>
+                    </form>
                   </div>
-                ))}
-                {attendance.length === 0 && <p className="text-text-s text-center py-8 text-sm">No records found</p>}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
-          {/* Bento 3: Personnel */}
-          <Card className="col-span-1 md:col-span-1 md:row-span-2 flex flex-col">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Personnel</CardTitle>
-              {(user?.role === 'admin' || user?.role === 'manager') && (
-                <Button variant="ghost" size="sm" onClick={downloadSalaryReport} className="h-6 px-2 text-[10px] bg-accent/10 text-accent hover:bg-accent/20" title="Download Salary CSV">
-                  <Download className="w-3 h-3 mr-1" /> EXPORT
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto -mx-6 px-6">
-              <div className="space-y-0">
-                {users.map((u) => (
-                  <div key={u._id} className="flex items-center justify-between py-3 border-b border-card-border last:border-0 group">
-                    <div>
-                      <p className="font-medium text-[14px]">{u.name}</p>
-                      <p className="text-[11px] text-text-s">{u.email}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] bg-accent/10 text-accent px-2 py-1 rounded font-mono">{u.role}</span>
-                      {canManageUsers && (
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                          <button onClick={() => startEditing(u)} className="p-1.5 hover:bg-card-border rounded-md text-text-s hover:text-text-p transition-colors">
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleDeleteUser(u._id)} className="p-1.5 hover:bg-red-500/20 rounded-md text-text-s hover:text-red-400 transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                  {/* Feed Content */}
+                  <div className="flex-1 overflow-y-auto px-6">
+                    <div className="space-y-0">
+                      {attendance.map((record, i) => (
+                        <div key={record._id || i} className="flex items-center gap-3 py-3 border-b border-card-border last:border-0 hover:bg-card-border/10 transition-colors">
+                        <div className="w-9 h-9 rounded-full bg-accent/10 border border-accent/20 text-accent flex items-center justify-center text-xs font-bold">
+                          {record.userEmail.charAt(0).toUpperCase()}
                         </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Bento 4: Map / Geo-fencing */}
-          <Card className="col-span-1 md:col-span-1 flex flex-col">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle>Site Geo-fences</CardTitle>
-              {canManageSites && (
-                <Button variant="ghost" size="sm" onClick={openAddSite} className="h-8 text-xs bg-accent/10 text-accent hover:bg-accent/20">
-                  + Add Site
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto -mx-6 px-6">
-              <div className="space-y-0">
-                {sites.map((s) => (
-                  <div key={s._id} className="flex items-center justify-between py-3 border-b border-card-border last:border-0 group">
-                    <div>
-                      <p className="font-medium text-[14px]">{s.name}</p>
-                      <p className="text-[10px] text-text-s font-mono">
-                        {s.lat.toFixed(4)}, {s.lng.toFixed(4)} • {s.radius}m
-                      </p>
-                    </div>
-                    {canManageSites && (
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                        <button onClick={() => startEditingSite(s)} className="p-1.5 hover:bg-card-border rounded-md text-text-s hover:text-text-p transition-colors">
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => handleDeleteSite(s._id)} className="p-1.5 hover:bg-red-500/20 rounded-md text-text-s hover:text-red-400 transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start">
+                            <div className="text-[14px] font-medium truncate">{record.userEmail}</div>
+                            <div className="text-[11px] text-text-s whitespace-nowrap">
+                              {format(new Date(record.timestamp), 'MMM dd, hh:mm a')}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between mt-1">
+                            <div className="text-[12px] text-text-s truncate">
+                              {record.status === 'clock-in' ? (
+                                <span className="text-success font-medium">Clocked In</span>
+                              ) : (
+                                <span className="text-red-400 font-medium">Clocked Out</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-success bg-success/10 px-2 py-0.5 rounded pl-1">
+                              <div className="w-1.5 h-1.5 rounded-full bg-success"></div>
+                              Verified
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    )}
+                    ))}
+                    {attendance.length === 0 && <p className="text-text-s text-center py-8 text-sm">No recent activity detected</p>}
                   </div>
-                ))}
-                {sites.length === 0 && <p className="text-text-s text-center py-4 text-xs">No sites configured</p>}
-              </div>
-            </CardContent>
-          </Card>
+                </div>
+                </CardContent>
+              </Card>
 
-          {/* Bento 5: Add User */}
-          {canManageUsers && (
-            <Card className="col-span-1 md:col-span-1">
-              <CardHeader>
-                <CardTitle>Add Worker</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleCreateUser} className="space-y-3">
-                  <Input 
-                    placeholder="Full Name" 
-                    value={newName} 
-                    onChange={e => setNewName(e.target.value)} 
-                    required 
-                    className="h-10 text-xs"
-                  />
-                  <Input 
-                    type="email" 
-                    placeholder="Email Address" 
-                    value={newEmail} 
-                    onChange={e => setNewEmail(e.target.value)} 
-                    required 
-                    className="h-10 text-xs"
-                  />
-                  <Input 
-                    type="password" 
-                    placeholder="Temporary Password" 
-                    value={newPassword} 
-                    onChange={e => setNewPassword(e.target.value)} 
-                    required 
-                    className="h-10 text-xs"
-                  />
-                  <Input 
-                    type="number" 
-                    step="any"
-                    placeholder="Daily Wage ($)" 
-                    value={newDailyWage} 
-                    onChange={e => setNewDailyWage(e.target.value)} 
-                    className="h-10 text-xs"
-                  />
-                  <Button type="submit" className="w-full h-10 text-xs" disabled={creating}>
-                    {creating ? 'Creating...' : 'Create Account'}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-          )}
+              {/* Bento 3: Site Geo-fences */}
+              <Card className="flex flex-col shadow-sm">
+                <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-card-border/50">
+                  <CardTitle>Site Geo-fences</CardTitle>
+                  {canManageSites && (
+                    <Button variant="ghost" size="sm" onClick={openAddSite} className="h-8 px-3 text-xs bg-accent hover:bg-accent/90 text-black shadow-sm font-semibold">
+                      + Create Site
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto px-6 py-2 pb-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    {sites.map((s) => (
+                      <div key={s._id} className="flex relative items-start justify-between p-4 border border-card-border bg-bg/50 rounded-xl group hover:border-accent/40 transition-colors">
+                        <div>
+                          <p className="font-semibold text-[14px] mb-1">{s.name}</p>
+                          <p className="text-[11px] text-text-s font-mono flex flex-col gap-0.5">
+                            <span>Lat: {s.lat.toFixed(4)}</span>
+                            <span>Lng: {s.lng.toFixed(4)}</span>
+                            <span className="text-accent/80 mt-1">Radius: {s.radius}m</span>
+                          </p>
+                        </div>
+                        {canManageSites && (
+                          <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => startEditingSite(s)} className="p-1.5 hover:bg-card-bg border border-transparent hover:border-card-border rounded-lg text-text-s hover:text-accent transition-colors shadow-sm">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => handleDeleteSite(s._id)} className="p-1.5 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-lg text-text-s hover:text-red-400 transition-colors shadow-sm">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {sites.length === 0 && <p className="text-text-s col-span-full text-center py-4 text-xs bg-bg/50 rounded-xl border border-dashed border-card-border">No sites currently configured.</p>}
+                  </div>
+                </CardContent>
+              </Card>
 
+            </div>
+
+            {/* RIGHT COLUMN: Takes up 1/3 of the space */}
+            <div className="lg:col-span-1 flex flex-col gap-6">
+
+              {/* Bento 4: Add User Form (Only for admins) */}
+              {canManageUsers && (
+                <Card className="shadow-sm">
+                  <CardHeader className="border-b border-card-border/50 pb-3">
+                    <CardTitle>Onboard New Worker</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <form onSubmit={handleCreateUser} className="space-y-3">
+                      <Input 
+                        placeholder="Full Name" 
+                        value={newName} 
+                        onChange={e => setNewName(e.target.value)} 
+                        required 
+                        className="h-10 text-xs bg-bg"
+                      />
+                      <Input 
+                        type="email" 
+                        placeholder="Email Address" 
+                        value={newEmail} 
+                        onChange={e => setNewEmail(e.target.value)} 
+                        required 
+                        className="h-10 text-xs bg-bg"
+                      />
+                      <div className="grid grid-cols-2 gap-3">
+                        <Input 
+                          type="password" 
+                          placeholder="Initial Password" 
+                          value={newPassword} 
+                          onChange={e => setNewPassword(e.target.value)} 
+                          required 
+                          className="h-10 text-xs bg-bg"
+                        />
+                        <Input 
+                          type="number" 
+                          step="any"
+                          placeholder="Daily Wage ($)" 
+                          value={newDailyWage} 
+                          onChange={e => setNewDailyWage(e.target.value)} 
+                          className="h-10 text-xs bg-bg"
+                        />
+                      </div>
+                      <Button type="submit" className="w-full h-10 text-xs mt-2" disabled={creating}>
+                        {creating ? 'Provisioning...' : 'Provision Account'}
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Bento 5: Personnel */}
+              <Card className="flex flex-col flex-1 min-h-[400px] shadow-sm">
+                <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-card-border/50">
+                  <CardTitle>Personnel Registry</CardTitle>
+                  {(user?.role === 'admin' || user?.role === 'manager') && (
+                    <Button variant="outline" size="sm" onClick={downloadSalaryReport} className="h-8 px-3 text-[10px] text-text-p hover:text-accent hover:border-accent/50 shadow-sm" title="Download Salary CSV">
+                      <Download className="w-3.5 h-3.5 mr-1.5" /> EXPORT
+                    </Button>
+                  )}
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto px-0 py-0">
+                  <div className="space-y-0">
+                    {users.map((u) => (
+                      <div key={u._id} className="flex items-center justify-between px-6 py-4 border-b border-card-border last:border-0 group hover:bg-card-border/10 transition-colors">
+                        <div>
+                          <p className="font-semibold text-[14px] flex items-center gap-2">
+                            {u.name}
+                            <span className="text-[9px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-1.5 py-0.5 rounded font-mono">
+                              {u.role}
+                            </span>
+                          </p>
+                          <p className="text-[11px] text-text-s mt-0.5">{u.email}</p>
+                          {u.dailyWage > 0 && <p className="text-[10px] text-success/80 mt-1 font-mono">${u.dailyWage}/day</p>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {canManageUsers && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
+                              <button onClick={() => startEditing(u)} className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-accent shadow-sm transition-colors">
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDeleteUser(u._id)} className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-red-400 shadow-sm transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+          </div>
         </div>
       </div>
 
@@ -660,12 +762,67 @@ export default function AdminDashboard() {
                 </Button>
                 <Button type="submit" className="flex-1 bg-accent hover:bg-accent/90 text-black">
                   {editingSite ? 'Save Changes' : 'Create Site'}
-                </Button>
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+     )}
+
+      {/* Alerts Modal */}
+      {isAlertsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="flex flex-col bg-bg border border-card-border rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-card-border bg-card-bg">
+              <div className="flex items-center gap-3">
+                <Bell className="w-5 h-5 text-accent" />
+                <h2 className="text-lg font-bold">System Alerts</h2>
               </div>
-            </form>
+              <button onClick={() => setIsAlertsOpen(false)} className="text-text-s hover:text-text-p">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-0">
+               {alerts.length === 0 ? (
+                 <div className="p-8 text-center text-text-s text-sm">No recent alerts.</div>
+               ) : (
+                 <div className="divide-y divide-card-border">
+                   {alerts.map(alert => (
+                     <div 
+                       key={alert._id} 
+                       className={`p-5 flex items-start gap-4 transition-colors ${alert.read ? 'bg-bg/50' : 'bg-red-500/5'}`}
+                     >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${alert.read ? 'bg-card-border text-text-s' : 'bg-red-500/20 text-red-500'}`}>
+                          <AlertTriangle className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm ${alert.read ? 'text-text-s' : 'text-text-p font-medium'}`}>
+                            {alert.message}
+                          </p>
+                          <div className="flex items-center justify-between mt-2">
+                             <span className="text-[11px] text-text-s flex items-center gap-2">
+                               {alert.userEmail && <span className="font-mono bg-card-border/50 px-1.5 rounded">{alert.userEmail}</span>}
+                               {format(new Date(alert.timestamp), 'MMM dd, hh:mm a')}
+                             </span>
+                             {!alert.read && (
+                               <button 
+                                 onClick={() => markAlertAsRead(alert._id)}
+                                 className="text-[11px] font-semibold text-accent hover:underline"
+                               >
+                                 Mark read
+                               </button>
+                             )}
+                          </div>
+                        </div>
+                     </div>
+                   ))}
+                 </div>
+               )}
+            </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

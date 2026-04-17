@@ -89,6 +89,16 @@ const siteSchema = new mongoose.Schema({
 });
 const Site = mongoose.model('Site', siteSchema);
 
+const alertSchema = new mongoose.Schema({
+  type: { type: String, required: true },
+  userId: String,
+  userEmail: String,
+  message: { type: String, required: true },
+  read: { type: Boolean, default: false },
+  timestamp: { type: Date, default: Date.now }
+});
+const Alert = mongoose.model('Alert', alertSchema);
+
 // Seed admin user
 async function seedAdmin() {
   try {
@@ -160,6 +170,40 @@ const requireDashboardAccess = (req: any, res: any, next: any) => {
 };
 
 // API Routes
+app.post('/api/alerts', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { type, message } = req.body;
+    const alert = await Alert.create({
+      type,
+      userId: req.user.id,
+      userEmail: req.user.email,
+      message,
+    });
+    io.emit('new_alert', alert);
+    res.status(201).json(alert);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/alerts', authenticateToken, requireDashboardAccess, async (req: any, res: any) => {
+  try {
+    const alerts = await Alert.find().sort({ timestamp: -1 }).limit(50);
+    res.json(alerts);
+  } catch(e) {
+    res.status(500).json({message: 'Server error'});
+  }
+});
+
+app.put('/api/alerts/:id/read', authenticateToken, requireDashboardAccess, async (req: any, res: any) => {
+  try {
+    const alert = await Alert.findByIdAndUpdate(req.params.id, { read: true }, { new: true });
+    res.json(alert);
+  } catch(e) {
+    res.status(500).json({message: 'Server error'});
+  }
+});
+
 function euclideanDistance(desc1: number[], desc2: number[]) {
   if (desc1.length !== desc2.length) return Infinity;
   let sum = 0;

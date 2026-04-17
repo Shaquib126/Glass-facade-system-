@@ -2,6 +2,9 @@ import * as faceapi from 'face-api.js';
 
 const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
 
+// Configurable threshold for face matching. Lower is stricter.
+export const DEFAULT_MATCH_THRESHOLD = 0.5;
+
 let modelsLoaded = false;
 
 export const loadModels = async () => {
@@ -30,7 +33,7 @@ export const getFaceDescriptor = async (mediaEl: HTMLVideoElement | HTMLCanvasEl
   return detection?.descriptor;
 };
 
-export const compareDescriptors = (desc1: Float32Array, desc2: Float32Array) => {
+export const compareDescriptors = (desc1: Float32Array, desc2: Float32Array, threshold: number = DEFAULT_MATCH_THRESHOLD) => {
   const distance = faceapi.euclideanDistance(desc1, desc2);
-  return distance < 0.5; // Threshold for match
+  return distance < threshold;
 };
