@@ -19,11 +19,11 @@ export const loadModels = async () => {
   }
 };
 
-export const getFaceDescriptor = async (videoEl: HTMLVideoElement) => {
+export const getFaceDescriptor = async (mediaEl: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement) => {
   if (!modelsLoaded) await loadModels();
   
   const detection = await faceapi
-    .detectSingleFace(videoEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
+    .detectSingleFace(mediaEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
     .withFaceLandmarks()
     .withFaceDescriptor();
     

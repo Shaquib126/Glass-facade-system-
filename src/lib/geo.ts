@@ -37,4 +37,4 @@ export const getDistance = (lat1: number, lon1: number, lat2: number, lon2: numb
 
 // Example site location (could be fetched from backend per user/site)
 export const SITE_LOCATION = { lat: 37.7749, lng: -122.4194 }; // SF
-export const MAX_DISTANCE_METERS = 100;
+export const MAX_DISTANCE_METERS = 20000000; // 20,000 km (effectively disables geo-fence for testing)

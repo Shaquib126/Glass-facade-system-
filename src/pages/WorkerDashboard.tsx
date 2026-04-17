@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAuthStore, useOfflineStore } from '../store';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
-import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft } from 'lucide-react';
+import { Input } from '../components/ui/Input';
+import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
 import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,8 +15,21 @@ export default function WorkerDashboard() {
   const [status, setStatus] = useState<'idle' | 'camera' | 'processing' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [actionType, setActionType] = useState<'clock-in' | 'clock-out' | null>(null);
-  const [view, setView] = useState<'main' | 'history'>('main');
+  const [view, setView] = useState<'main' | 'history' | 'profile'>('main');
   const [history, setHistory] = useState<any[]>([]);
+  const [sites, setSites] = useState<any[]>([]);
+  
+  const [editName, setEditName] = useState(user?.name || '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [profileMessage, setProfileMessage] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  
+  const [enrollStatus, setEnrollStatus] = useState<'idle' | 'camera' | 'processing' | 'success' | 'error'>('idle');
+  const [enrollMessage, setEnrollMessage] = useState('');
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -23,7 +37,56 @@ export default function WorkerDashboard() {
     loadModels().catch(console.error);
     syncOfflineData();
     fetchHistory();
+    fetchSites();
   }, []);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileError('');
+    setProfileMessage('');
+    
+    if (newPassword && newPassword !== confirmPassword) {
+      return setProfileError('New passwords do not match');
+    }
+
+    setIsUpdatingProfile(true);
+    try {
+      const res = await fetch('/api/users/me', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: editName, currentPassword, newPassword })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to update profile');
+      
+      updateUser(data);
+      setProfileMessage('Profile updated successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setProfileError(err.message);
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const fetchSites = async () => {
+    try {
+      const res = await fetch('/api/sites', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setSites(await res.json());
+      }
+    } catch (e) {
+      console.error('Failed to fetch sites', e);
+    }
+  };
 
   const fetchHistory = async () => {
     try {
@@ -75,8 +138,74 @@ export default function WorkerDashboard() {
     }
   };
 
+  const startEnrollCamera = async () => {
+    setEnrollStatus('camera');
+    setEnrollMessage('Position your face in the frame');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      setEnrollStatus('error');
+      setEnrollMessage('Camera access denied');
+    }
+  };
+
+  const handleEnrollCapture = async () => {
+    if (!videoRef.current) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    }
+
+    setEnrollStatus('processing');
+    setEnrollMessage('Scanning face...');
+
+    try {
+      const descriptor = await getFaceDescriptor(canvas);
+      stopCamera();
+
+      if (!descriptor) {
+        throw new Error('No face detected. Please try again.');
+      }
+
+      const res = await fetch('/api/users/me/descriptor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ faceDescriptor: Array.from(descriptor) }),
+      });
+      if (!res.ok) throw new Error('Failed to save face profile');
+      
+      updateUser({ hasFaceDescriptor: true });
+      setEnrollStatus('success');
+      setEnrollMessage('Face login configured successfully!');
+      setTimeout(() => setEnrollStatus('idle'), 3000);
+    } catch (err: any) {
+      stopCamera();
+      setEnrollStatus('error');
+      setEnrollMessage(err.message);
+      setTimeout(() => setEnrollStatus('idle'), 4000);
+    }
+  };
+
   const handleCapture = async () => {
     if (!videoRef.current) return;
+
+    // Capture the current frame to a canvas before unmounting the video element
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    }
+
     setStatus('processing');
     setMessage('Verifying identity and location...');
 
@@ -85,16 +214,32 @@ export default function WorkerDashboard() {
       let location;
       try {
         location = await getCurrentLocation();
-        const distance = getDistance(location.lat, location.lng, SITE_LOCATION.lat, SITE_LOCATION.lng);
-        if (distance > MAX_DISTANCE_METERS) {
-          throw new Error(`Too far from site (${Math.round(distance)}m away)`);
+        
+        if (sites.length === 0) {
+          throw new Error('No active sites configured by admin.');
+        }
+
+        let isWithinAnySite = false;
+        let closestDistance = Infinity;
+
+        for (const site of sites) {
+          const distance = getDistance(location.lat, location.lng, site.lat, site.lng);
+          if (distance < closestDistance) closestDistance = distance;
+          if (distance <= site.radius) {
+            isWithinAnySite = true;
+            break;
+          }
+        }
+
+        if (!isWithinAnySite) {
+          throw new Error(`Too far from any site (Closest is ${Math.round(closestDistance)}m away)`);
         }
       } catch (geoErr: any) {
         throw new Error(geoErr.message || 'Location verification failed');
       }
 
-      // 2. Get Face Descriptor
-      const descriptor = await getFaceDescriptor(videoRef.current);
+      // 2. Get Face Descriptor from the captured canvas
+      const descriptor = await getFaceDescriptor(canvas);
       stopCamera();
 
       if (!descriptor) {
@@ -164,9 +309,20 @@ export default function WorkerDashboard() {
           <p className="text-sm text-text-s">{new Date().toLocaleDateString()}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="ghost" size="icon" onClick={() => setView(view === 'main' ? 'history' : 'main')}>
-            {view === 'main' ? <History className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-          </Button>
+          {view !== 'main' ? (
+            <Button variant="ghost" size="icon" onClick={() => setView('main')}>
+              <ChevronLeft className="w-5 h-5" />
+            </Button>
+          ) : (
+            <>
+              <Button variant="ghost" size="icon" onClick={() => setView('history')}>
+                <History className="w-5 h-5" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setView('profile')}>
+                <UserIcon className="w-5 h-5" />
+              </Button>
+            </>
+          )}
           <Button variant="ghost" size="icon" onClick={logout}>
             <LogOut className="w-5 h-5" />
           </Button>
@@ -209,6 +365,114 @@ export default function WorkerDashboard() {
                       <p className="text-text-s text-center py-8 text-sm">No attendance records found.</p>
                     )}
                   </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {view === 'profile' && (
+            <motion.div
+              key="profile"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="flex-1 flex flex-col"
+            >
+              <Card className="flex-1 flex flex-col max-h-[80vh]">
+                <CardHeader>
+                  <CardTitle>My Profile</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto">
+                  <form onSubmit={handleUpdateProfile} className="space-y-4">
+                    {profileError && <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">{profileError}</div>}
+                    {profileMessage && <div className="p-3 rounded-xl bg-success/10 border border-success/20 text-success text-sm text-center">{profileMessage}</div>}
+                    
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-text-s uppercase tracking-wider">Full Name</label>
+                      <Input value={editName} onChange={e => setEditName(e.target.value)} required />
+                    </div>
+
+                    <div className="pt-4 border-t border-card-border">
+                      <h3 className="text-sm font-medium mb-4">Face Recognition Login</h3>
+                      
+                      {enrollStatus === 'idle' && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between p-4 rounded-xl border border-card-border bg-card-bg">
+                            <div className="flex items-center gap-3">
+                              <ScanFace className="w-5 h-5 text-accent" />
+                              <div>
+                                <p className="text-sm font-medium">Face Login</p>
+                                <p className="text-xs text-text-s">
+                                  {user?.hasFaceDescriptor ? 'Configured' : 'Not configured'}
+                                </p>
+                              </div>
+                            </div>
+                            <Button type="button" variant="outline" size="sm" onClick={startEnrollCamera}>
+                              {user?.hasFaceDescriptor ? 'Update Scan' : 'Set Up'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {enrollStatus === 'camera' && (
+                        <div className="flex flex-col items-center space-y-4 mt-4">
+                          <div className="relative w-full aspect-square max-w-[240px] rounded-2xl overflow-hidden bg-black border border-card-border">
+                            <video
+                              ref={videoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 border-2 border-accent/50 rounded-2xl pointer-events-none" />
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="w-32 h-40 border-2 border-dashed border-white/50 rounded-full" />
+                            </div>
+                          </div>
+                          <p className="text-center text-text-s text-sm">{enrollMessage}</p>
+                          <div className="flex gap-3 w-full max-w-[240px]">
+                            <Button type="button" variant="outline" className="flex-1" onClick={() => { stopCamera(); setEnrollStatus('idle'); }}>
+                              Cancel
+                            </Button>
+                            <Button type="button" className="flex-1 bg-accent hover:bg-accent/90 text-black" onClick={handleEnrollCapture}>
+                              <Camera className="w-4 h-4 mr-2" />
+                              Capture
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {(enrollStatus === 'processing' || enrollStatus === 'success' || enrollStatus === 'error') && (
+                        <div className="flex flex-col items-center justify-center py-8 text-center space-y-4">
+                          {enrollStatus === 'processing' && (
+                            <div className="w-12 h-12 border-4 border-accent/20 border-t-accent rounded-full animate-spin" />
+                          )}
+                          {enrollStatus === 'success' && <CheckCircle2 className="w-12 h-12 text-success" />}
+                          {enrollStatus === 'error' && <XCircle className="w-12 h-12 text-red-500" />}
+                          <p className="text-sm font-medium">{enrollMessage}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-4 border-t border-card-border">
+                      <h3 className="text-sm font-medium mb-4">Change Password (Optional)</h3>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Input type="password" placeholder="Current Password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Input type="password" placeholder="New Password" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Input type="password" placeholder="Confirm New Password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold mt-6" disabled={isUpdatingProfile}>
+                      {isUpdatingProfile ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
             </motion.div>

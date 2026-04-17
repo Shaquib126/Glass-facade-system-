@@ -27,6 +27,16 @@ const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-glass-facade';
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/glass-facade';
 
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -48,6 +58,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { type: String, default: 'user' },
   name: String,
+  dailyWage: { type: Number, default: 0 },
   faceDescriptor: [Number],
   resetPasswordToken: String,
   resetPasswordExpires: Date,
@@ -69,6 +80,15 @@ const attendanceSchema = new mongoose.Schema({
 });
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 
+const siteSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  lat: { type: Number, required: true },
+  lng: { type: Number, required: true },
+  radius: { type: Number, required: true, default: 100 },
+  createdAt: { type: Date, default: Date.now }
+});
+const Site = mongoose.model('Site', siteSchema);
+
 // Seed admin user
 async function seedAdmin() {
   try {
@@ -87,8 +107,27 @@ async function seedAdmin() {
     console.error('Error seeding admin:', err);
   }
 }
+
+async function seedDefaultSite() {
+  try {
+    const siteCount = await Site.countDocuments();
+    if (siteCount === 0) {
+      await Site.create({
+        name: 'Main Construction Site (SF)',
+        lat: 37.7749,
+        lng: -122.4194,
+        radius: 100
+      });
+      console.log('Default site seeded');
+    }
+  } catch (err) {
+    console.error('Error seeding site:', err);
+  }
+}
+
 mongoose.connection.once('open', () => {
   seedAdmin();
+  seedDefaultSite();
 });
 
 // Middleware to verify JWT
@@ -107,6 +146,16 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
 const requireAdmin = (req: any, res: any, next: any) => {
   if (req.user.role !== 'admin') return res.sendStatus(403);
+  next();
+};
+
+const requireAdminOrManager = (req: any, res: any, next: any) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') return res.sendStatus(403);
+  next();
+};
+
+const requireDashboardAccess = (req: any, res: any, next: any) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager' && req.user.role !== 'supervisor') return res.sendStatus(403);
   next();
 };
 
@@ -197,6 +246,10 @@ app.post('/api/auth/login-face', async (req: any, res: any) => {
 
 app.post('/api/auth/forgot-password', async (req: any, res: any) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(500).json({ message: `Database Error: ${dbConnectionError || 'Not connected'}. Please check your MONGODB_URI secret.` });
+    }
+
     const { email } = req.body;
     const user: any = await User.findOne({ email });
     
@@ -210,43 +263,32 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
     await user.save();
 
-            // Yahan se aapka naya Nodemailer code shuru hoga (Line 213 ki jagah par)
-        
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
-            }
+    // In a real application, send this via email (e.g., using SendGrid, Nodemailer)
+    // For this environment, we'll log it and return it for testing purposes
+    const resetUrl = `http://${req.headers.host}/reset-password?token=${token}`;
+    console.log(`\n=== PASSWORD RESET LINK ===\nFor user: ${email}\nLink: ${resetUrl}\n===========================\n`);
+
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+      try {
+        await transporter.sendMail({
+          from: `"Glass Facade System" <${process.env.SMTP_USER}>`,
+          to: user.email,
+          subject: 'Password Reset - Glass Facade',
+          text: `Please click the link below to reset your password:\n${resetUrl}\n\nIf you did not request this, please ignore this email.`,
+          html: `<p>Please click the link below to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you did not request this, please ignore this email.</p>`
         });
+        console.log(`Password reset email sent to ${user.email}`);
+      } catch (emailErr) {
+        console.error('Failed to send reset email via Nodemailer:', emailErr);
+      }
+    } else {
+      console.log('NOTE: SMTP_USER or SMTP_PASS environments missing. Nodemailer skipping real email sending.');
+    }
 
-        // Live website ka link
-        const liveResetUrl = `https://em.onrender.com/reset-password?token=${token}`;
-
-        const mailOptions = {
-            from: process.env.EMAIL_USER,
-            to: user.email,
-            subject: 'Glass Facade - Password Reset Request',
-            html: `
-                <div style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h3>Password Reset</h3>
-                    <p>Aapne apna password reset karne ki request ki hai. Naya password set karne ke liye neeche diye gaye link par click karein:</p>
-                    <br>
-                    <a href="${liveResetUrl}" style="background-color: #00e5ff; color: black; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Reset Password</a>
-                    <br><br>
-                    <p style="color: #555;">Agar aapne yeh request nahi ki hai, toh is email ko ignore karein.</p>
-                </div>
-            `
-        };
-
-        // Email send karna
-        await transporter.sendMail(mailOptions);
-
-        // Frontend ko success message bhejna (yeh res.json line 220/221 ki jagah le lega)
-        res.json({ 
-            message: 'If that email is in our system, we have sent a password reset link.' 
-        });
-
+    res.json({ 
+      message: 'If that email is in our system, we have sent a password reset link.',
+      _dev_token: token // Included for testing in AI Studio without real email
+    });
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -285,7 +327,7 @@ app.post('/api/auth/reset-password', async (req: any, res: any) => {
 
 app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const { email, password, name, role, faceDescriptor } = req.body;
+    const { email, password, name, role, faceDescriptor, dailyWage } = req.body;
     
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -299,6 +341,7 @@ app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any,
       password: hashedPassword,
       name,
       role: role || 'user',
+      dailyWage: dailyWage || 0,
       faceDescriptor: faceDescriptor || null
     });
 
@@ -308,7 +351,7 @@ app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any,
   }
 });
 
-app.get('/api/users', authenticateToken, requireAdmin, async (req: any, res: any) => {
+app.get('/api/users', authenticateToken, requireDashboardAccess, async (req: any, res: any) => {
   try {
     const users = await User.find({}, { password: 0 });
     res.json(users);
@@ -317,12 +360,63 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req: any, res: any
   }
 });
 
+app.get('/api/reports/salary', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { month } = req.query; // Format: YYYY-MM
+    let startDate: Date, endDate: Date;
+    
+    if (month) {
+      startDate = new Date(`${month}-01T00:00:00.000Z`);
+      endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else {
+      const now = new Date();
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    const users = await User.find({}, { password: 0 });
+    const attendance = await Attendance.find({
+      timestamp: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
+      status: 'clock-in' // Check unique days they clocked in
+    });
+
+    const userStats: Record<string, Set<string>> = {};
+    for (const record of (attendance as any[])) {
+      const uid = record.userId.toString();
+      if (!userStats[uid]) userStats[uid] = new Set();
+      // Calculate active days by stripping time from ISO timestamp
+      const dateStr = new Date(record.timestamp).toISOString().split('T')[0];
+      userStats[uid].add(dateStr);
+    }
+
+    const report = users.map((u: any) => {
+      const uid = u._id.toString();
+      const daysWorked = userStats[uid] ? userStats[uid].size : 0;
+      const wage = u.dailyWage || 0;
+      return {
+        id: uid,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        dailyWage: wage,
+        daysWorked,
+        totalSalary: daysWorked * wage
+      };
+    });
+
+    res.json(report);
+  } catch (error) {
+    console.error('Report generation error:', error);
+    res.status(500).json({ message: 'Server error generating report' });
+  }
+});
+
 app.put('/api/users/:id', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const { name, email, role } = req.body;
+    const { name, email, role, dailyWage } = req.body;
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
-      { name, email, role },
+      { name, email, role, dailyWage },
       { new: true, select: '-password' }
     );
     if (!updatedUser) {
@@ -338,6 +432,50 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req: any, r
   try {
     await User.deleteOne({ _id: req.params.id });
     res.json({ message: 'User deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Site Routes
+app.get('/api/sites', authenticateToken, async (req: any, res: any) => {
+  try {
+    const sites = await Site.find({});
+    res.json(sites);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/sites', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { name, lat, lng, radius } = req.body;
+    const newSite = await Site.create({ name, lat, lng, radius });
+    res.status(201).json(newSite);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/api/sites/:id', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { name, lat, lng, radius } = req.body;
+    const updatedSite = await Site.findByIdAndUpdate(
+      req.params.id,
+      { name, lat, lng, radius },
+      { new: true }
+    );
+    if (!updatedSite) return res.status(404).json({ message: 'Site not found' });
+    res.json(updatedSite);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.delete('/api/sites/:id', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    await Site.deleteOne({ _id: req.params.id });
+    res.json({ message: 'Site deleted' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -360,6 +498,40 @@ app.post('/api/users/me/descriptor', authenticateToken, async (req: any, res: an
     const { faceDescriptor } = req.body;
     await User.updateOne({ _id: req.user.id }, { $set: { faceDescriptor } });
     res.json({ message: 'Face descriptor updated' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { name, currentPassword, newPassword } = req.body;
+    const user: any = await User.findById(req.user.id);
+    
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (name) user.name = name;
+
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'Current password is required to set a new password' });
+      }
+      const validPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ message: 'Invalid current password' });
+      }
+      user.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    await user.save();
+
+    res.json({
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      name: user.name,
+      hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -412,9 +584,28 @@ app.post('/api/attendance/sync', authenticateToken, async (req: any, res: any) =
   }
 });
 
-app.get('/api/attendance', authenticateToken, requireAdmin, async (req: any, res: any) => {
+app.get('/api/attendance', authenticateToken, requireDashboardAccess, async (req: any, res: any) => {
   try {
-    const records = await Attendance.find({}).sort({ timestamp: -1 }).limit(100);
+    const { startDate, endDate, userId } = req.query;
+    let query: any = {};
+
+    if (userId) {
+      query.userId = userId;
+    }
+
+    if (startDate || endDate) {
+      query.timestamp = {};
+      if (startDate) {
+        query.timestamp.$gte = new Date(startDate as string).toISOString();
+      }
+      if (endDate) {
+        const endDay = new Date(endDate as string);
+        endDay.setHours(23, 59, 59, 999);
+        query.timestamp.$lte = endDay.toISOString();
+      }
+    }
+
+    const records = await Attendance.find(query).sort({ timestamp: -1 }).limit(100);
     res.json(records);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

@@ -96,11 +96,21 @@ export default function Login() {
 
   const handleFaceCapture = async () => {
     if (!videoRef.current) return;
+
+    // Capture the current frame to a canvas before unmounting the video element
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    }
+
     setStatus('processing');
     setError('');
 
     try {
-      const descriptor = await getFaceDescriptor(videoRef.current);
+      const descriptor = await getFaceDescriptor(canvas);
       stopCamera();
 
       if (!descriptor) {

@@ -13,15 +13,16 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [token, setToken] = useState<string | null>(null);
 
-  
-        useEfect(()=>{
-        const queryParams = new URLSearchParams(window.location.search);
-        const urlToken = queryParams.get('token');
-        
-        if (urlToken) {
-            setToken(urlToken);
-        }
-    }, []);
+  useEffect(() => {
+    // Extract token from URL query params
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get('token');
+    if (tokenParam) {
+      setToken(tokenParam);
+    } else {
+      setError('Invalid or missing reset token.');
+    }
+  }, []);
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault();
