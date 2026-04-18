@@ -3,7 +3,7 @@ import { useAuthStore, useOfflineStore } from '../store';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
-import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace } from 'lucide-react';
+import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
 import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -30,6 +30,12 @@ export default function WorkerDashboard() {
   const [enrollStatus, setEnrollStatus] = useState<'idle' | 'camera' | 'processing' | 'success' | 'error'>('idle');
   const [enrollMessage, setEnrollMessage] = useState('');
   
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  const toggleTheme = () => {
+    document.documentElement.classList.toggle('dark');
+    setIsDark(document.documentElement.classList.contains('dark'));
+  };
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -39,6 +45,12 @@ export default function WorkerDashboard() {
     fetchHistory();
     fetchSites();
   }, []);
+
+  useEffect(() => {
+    if (view === 'profile' && !user?.hasFaceDescriptor && enrollStatus === 'idle') {
+      startEnrollCamera();
+    }
+  }, [view, user?.hasFaceDescriptor, enrollStatus]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -325,6 +337,9 @@ export default function WorkerDashboard() {
           <p className="text-sm text-text-s">{new Date().toLocaleDateString()}</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="ghost" size="icon" onClick={toggleTheme}>
+            {isDark ? <Sun className="w-5 h-5 text-accent" /> : <Moon className="w-5 h-5 text-accent" />}
+          </Button>
           {view !== 'main' ? (
             <Button variant="ghost" size="icon" onClick={() => setView('main')}>
               <ChevronLeft className="w-5 h-5" />
@@ -450,7 +465,7 @@ export default function WorkerDashboard() {
                             <Button type="button" variant="outline" className="flex-1" onClick={() => { stopCamera(); setEnrollStatus('idle'); }}>
                               Cancel
                             </Button>
-                            <Button type="button" className="flex-1 bg-accent hover:bg-accent/90 text-black" onClick={handleEnrollCapture}>
+                            <Button type="button" className="flex-1 bg-accent hover:bg-accent/90 text-btn-text" onClick={handleEnrollCapture}>
                               <Camera className="w-4 h-4 mr-2" />
                               Capture
                             </Button>
@@ -485,7 +500,7 @@ export default function WorkerDashboard() {
                       </div>
                     </div>
 
-                    <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold mt-6" disabled={isUpdatingProfile}>
+                    <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-btn-text font-semibold mt-6" disabled={isUpdatingProfile}>
                       {isUpdatingProfile ? 'Saving...' : 'Save Changes'}
                     </Button>
                   </form>
@@ -556,7 +571,7 @@ export default function WorkerDashboard() {
                 <Button variant="outline" className="flex-1" onClick={() => { stopCamera(); setStatus('idle'); }}>
                   Cancel
                 </Button>
-                <Button className="flex-1 bg-accent hover:bg-accent/90 text-black" onClick={handleCapture}>
+                <Button className="flex-1 bg-accent hover:bg-accent/90 text-btn-text" onClick={handleCapture}>
                   <Camera className="w-5 h-5 mr-2" />
                   Verify
                 </Button>

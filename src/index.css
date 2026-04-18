@@ -3,18 +3,44 @@
 
 @theme {
   --font-sans: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --color-bg: #05070A;
-  --color-card-bg: rgba(255, 255, 255, 0.03);
-  --color-card-border: rgba(255, 255, 255, 0.08);
-  --color-accent: #00F0FF;
-  --color-success: #00FF94;
-  --color-warning: #FFD600;
-  --color-text-p: #FFFFFF;
-  --color-text-s: #8A8F98;
+  --color-bg: var(--theme-bg);
+  --color-card-bg: var(--theme-card-bg);
+  --color-card-border: var(--theme-card-border);
+  --color-accent: var(--theme-accent);
+  --color-success: var(--theme-success);
+  --color-warning: var(--theme-warning);
+  --color-text-p: var(--theme-text-p);
+  --color-text-s: var(--theme-text-s);
+  --color-btn-text: var(--theme-btn-text);
+}
+
+:root {
+  --theme-bg: #F4F6F8;
+  --theme-card-bg: #FFFFFF;
+  --theme-card-border: #E2E8F0;
+  --theme-accent: #0070F3;
+  --theme-success: #10B981;
+  --theme-warning: #F59E0B;
+  --theme-text-p: #0F172A;
+  --theme-text-s: #64748B;
+  --theme-btn-text: #FFFFFF;
+}
+
+.dark {
+  --theme-bg: #05070A;
+  --theme-card-bg: rgba(255, 255, 255, 0.03);
+  --theme-card-border: rgba(255, 255, 255, 0.08);
+  --theme-accent: #00F0FF;
+  --theme-success: #00FF94;
+  --theme-warning: #FFD600;
+  --theme-text-p: #FFFFFF;
+  --theme-text-s: #8A8F98;
+  --theme-btn-text: #000000;
 }
 
 body {
   font-family: var(--font-sans);
   background-color: var(--color-bg);
   color: var(--color-text-p);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }

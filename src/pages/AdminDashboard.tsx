@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { format } from 'date-fns';
-import { Edit2, Trash2, X, LogOut, Filter, Download, Bell, AlertTriangle } from 'lucide-react';
+import { Edit2, Trash2, X, LogOut, Filter, Download, Bell, AlertTriangle, Moon, Sun, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function AdminDashboard() {
@@ -25,10 +25,19 @@ export default function AdminDashboard() {
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newName, setNewName] = useState('');
+  const [newRole, setNewRole] = useState('user');
   const [newDailyWage, setNewDailyWage] = useState('');
+  const [newOttHours, setNewOttHours] = useState('');
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '' });
+  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '', ottHours: '' });
+  
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  
+  const toggleTheme = () => {
+    document.documentElement.classList.toggle('dark');
+    setIsDark(document.documentElement.classList.contains('dark'));
+  };
   
   const [editingSite, setEditingSite] = useState<any>(null);
   const [siteForm, setSiteForm] = useState({ name: '', lat: '', lng: '', radius: '100' });
@@ -125,6 +134,29 @@ export default function AdminDashboard() {
     fetchData(); // Reset to default top 100
   };
 
+  const handleAdminClockIn = async (userId: string) => {
+    try {
+      const res = await fetch('/api/attendance/admin-clockin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ targetUserId: userId })
+      });
+      if (res.ok) {
+        fetchFilteredAttendance();
+        setShowNotificationToast({ message: 'Successfully clocked in user.', show: true });
+        setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to clock in user');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
@@ -134,7 +166,8 @@ export default function AdminDashboard() {
         password: newPassword, 
         name: newName, 
         role: 'user', 
-        dailyWage: newDailyWage ? Number(newDailyWage) : 0 
+        dailyWage: newDailyWage ? Number(newDailyWage) : 0,
+        ottHours: newOttHours ? Number(newOttHours) : 0
       };
       
       const res = await fetch('/api/auth/register', {
@@ -150,6 +183,7 @@ export default function AdminDashboard() {
         setNewPassword('');
         setNewName('');
         setNewDailyWage('');
+        setNewOttHours('');
         fetchData(); // Refresh user list
       } else {
         const data = await res.json();
@@ -181,7 +215,8 @@ export default function AdminDashboard() {
       name: user.name || '', 
       email: user.email || '', 
       role: user.role || 'user',
-      dailyWage: user.dailyWage !== undefined ? String(user.dailyWage) : '0' 
+      dailyWage: user.dailyWage !== undefined ? String(user.dailyWage) : '0',
+      ottHours: user.ottHours !== undefined ? String(user.ottHours) : '0' 
     });
   };
 
@@ -191,7 +226,8 @@ export default function AdminDashboard() {
     try {
       const payload = {
         ...editForm,
-        dailyWage: editForm.dailyWage ? Number(editForm.dailyWage) : 0
+        dailyWage: editForm.dailyWage ? Number(editForm.dailyWage) : 0,
+        ottHours: editForm.ottHours ? Number(editForm.ottHours) : 0
       };
 
       const res = await fetch(`/api/users/${editingUser._id}`, {
@@ -337,6 +373,9 @@ export default function AdminDashboard() {
       <div className="md:hidden flex items-center justify-between p-4 border-b border-card-border bg-card-bg z-10">
         <div className="text-[16px] font-extrabold tracking-tight text-accent uppercase">Glass Facade</div>
         <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={toggleTheme}>
+            {isDark ? <Sun className="w-5 h-5 text-accent" /> : <Moon className="w-5 h-5 text-accent" />}
+          </Button>
           <Button variant="ghost" size="icon" className="relative text-text-s" onClick={() => setIsAlertsOpen(true)}>
              <Bell className="w-5 h-5" />
              {alerts.filter(a => !a.read).length > 0 && (
@@ -374,6 +413,11 @@ export default function AdminDashboard() {
         <div className="py-3 text-[14px] text-text-s cursor-pointer flex items-center gap-3">Attendance Logs</div>
         <div className="py-3 text-[14px] text-text-s cursor-pointer flex items-center gap-3">System Health</div>
         <div className="mt-auto">
+          <div className="py-3 text-[14px] text-text-s cursor-pointer flex items-center justify-between" onClick={toggleTheme}>
+            <span className="flex items-center gap-3">
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />} Theme 
+            </span>
+          </div>
           <div className="py-3 text-[14px] text-text-s cursor-pointer flex items-center gap-3">Settings</div>
           <div className="py-3 text-[14px] text-text-s cursor-pointer flex items-center gap-3" onClick={logout}>Logout</div>
         </div>
@@ -504,7 +548,7 @@ export default function AdminDashboard() {
                 <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-card-border/50">
                   <CardTitle>Site Geo-fences</CardTitle>
                   {canManageSites && (
-                    <Button variant="ghost" size="sm" onClick={openAddSite} className="h-8 px-3 text-xs bg-accent hover:bg-accent/90 text-black shadow-sm font-semibold">
+                    <Button variant="ghost" size="sm" onClick={openAddSite} className="h-8 px-3 text-xs bg-accent hover:bg-accent/90 text-btn-text shadow-sm font-semibold">
                       + Create Site
                     </Button>
                   )}
@@ -575,12 +619,32 @@ export default function AdminDashboard() {
                           required 
                           className="h-10 text-xs bg-bg"
                         />
+                        <select
+                           value={newRole}
+                           onChange={e => setNewRole(e.target.value)}
+                           className="flex h-10 w-full rounded-md border border-input bg-bg px-3 py-2 text-xs ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                           <option value="user">Worker</option>
+                           <option value="supervisor">Supervisor</option>
+                           <option value="manager">Manager</option>
+                           <option value="admin">System Admin</option>
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 mt-3">
                         <Input 
                           type="number" 
                           step="any"
-                          placeholder="Daily Wage ($)" 
+                          placeholder="Daily Wage (₹)" 
                           value={newDailyWage} 
                           onChange={e => setNewDailyWage(e.target.value)} 
+                          className="h-10 text-xs bg-bg"
+                        />
+                        <Input 
+                          type="number" 
+                          step="any"
+                          placeholder="Max OTT Hours" 
+                          value={newOttHours} 
+                          onChange={e => setNewOttHours(e.target.value)} 
                           className="h-10 text-xs bg-bg"
                         />
                       </div>
@@ -614,11 +678,24 @@ export default function AdminDashboard() {
                             </span>
                           </p>
                           <p className="text-[11px] text-text-s mt-0.5">{u.email}</p>
-                          {u.dailyWage > 0 && <p className="text-[10px] text-success/80 mt-1 font-mono">${u.dailyWage}/day</p>}
+                          <div className="flex gap-2">
+                            {u.dailyWage > 0 && <p className="text-[10px] text-success/80 mt-1 font-mono">₹{u.dailyWage}/day</p>}
+                            {u.ottHours > 0 && <p className="text-[10px] text-accent mt-1 font-mono">{u.ottHours}h OTT Allow</p>}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           {canManageUsers && (
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
+                              {/* Admin Clock-in Button (if not clocked in today) */}
+                              {!attendance.some(a => a.userId === u._id && a.status === 'clock-in' && new Date(a.timestamp).toDateString() === new Date().toDateString()) && (
+                                <button 
+                                  onClick={() => handleAdminClockIn(u._id)} 
+                                  title="Force Clock In"
+                                  className="p-1.5 bg-bg border border-success/30 rounded-lg text-success hover:bg-success/10 shadow-sm transition-colors"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button onClick={() => startEditing(u)} className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-accent shadow-sm transition-colors">
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
@@ -681,7 +758,7 @@ export default function AdminDashboard() {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Daily Wage ($)</label>
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Daily Wage (₹)</label>
                 <Input 
                   type="number" 
                   step="any"
@@ -689,11 +766,20 @@ export default function AdminDashboard() {
                   onChange={e => setEditForm({...editForm, dailyWage: e.target.value})} 
                 />
               </div>
+              <div className="space-y-2 mt-3">
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Max OTT Hours</label>
+                <Input 
+                  type="number" 
+                  step="any"
+                  value={editForm.ottHours} 
+                  onChange={e => setEditForm({...editForm, ottHours: e.target.value})} 
+                />
+              </div>
               <div className="pt-4 flex gap-3">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setEditingUser(null)}>
                   Cancel
                 </Button>
-                <Button type="submit" className="flex-1 bg-accent hover:bg-accent/90 text-black">
+                <Button type="submit" className="flex-1 bg-accent hover:bg-accent/90 text-btn-text">
                   Save Changes
                 </Button>
               </div>
@@ -760,7 +846,7 @@ export default function AdminDashboard() {
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setIsAddingSite(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" className="flex-1 bg-accent hover:bg-accent/90 text-black">
+                <Button type="submit" className="flex-1 bg-accent hover:bg-accent/90 text-btn-text">
                   {editingSite ? 'Save Changes' : 'Create Site'}
               </Button>
             </div>

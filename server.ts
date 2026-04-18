@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import cron from 'node-cron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,6 +60,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: 'user' },
   name: String,
   dailyWage: { type: Number, default: 0 },
+  ottHours: { type: Number, default: 0 },
   faceDescriptor: [Number],
   resetPasswordToken: String,
   resetPasswordExpires: Date,
@@ -371,7 +373,7 @@ app.post('/api/auth/reset-password', async (req: any, res: any) => {
 
 app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const { email, password, name, role, faceDescriptor, dailyWage } = req.body;
+    const { email, password, name, role, faceDescriptor, dailyWage, ottHours } = req.body;
     
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -386,6 +388,7 @@ app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any,
       name,
       role: role || 'user',
       dailyWage: dailyWage || 0,
+      ottHours: ottHours || 0,
       faceDescriptor: faceDescriptor || null
     });
 
@@ -457,10 +460,10 @@ app.get('/api/reports/salary', authenticateToken, requireAdminOrManager, async (
 
 app.put('/api/users/:id', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const { name, email, role, dailyWage } = req.body;
+    const { name, email, role, dailyWage, ottHours } = req.body;
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
-      { name, email, role, dailyWage },
+      { name, email, role, dailyWage, ottHours },
       { new: true, select: '-password' }
     );
     if (!updatedUser) {
@@ -581,10 +584,45 @@ app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
   }
 });
 
+// Calculate distance using Haversine formula
+const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+};
+
 app.post('/api/attendance', authenticateToken, async (req: any, res: any) => {
   try {
     const { status, location, timestamp, offline } = req.body;
     
+    let isOutsideGeofence = false;
+
+    if (location && location.lat && location.lng) {
+      const sites = await Site.find({});
+      if (sites.length > 0) {
+        let isInsideAny = false;
+        for (const site of sites) {
+          const dist = getDistance(location.lat, location.lng, site.lat, site.lng);
+          if (dist <= (site.radius || 100)) {
+            isInsideAny = true;
+            break;
+          }
+        }
+        if (!isInsideAny) {
+          isOutsideGeofence = true;
+        }
+      }
+    }
+
     const record = await Attendance.create({
       userId: req.user.id,
       userEmail: req.user.email,
@@ -593,6 +631,31 @@ app.post('/api/attendance', authenticateToken, async (req: any, res: any) => {
       timestamp: timestamp || new Date().toISOString(),
       offline: !!offline
     });
+
+    if (isOutsideGeofence) {
+      const alert = await Alert.create({
+        type: 'geofence',
+        userId: req.user.id,
+        userEmail: req.user.email,
+        message: `User ${req.user.email} clocked ${status === 'clock-in' ? 'in' : 'out'} outside of designated work sites.`,
+      });
+      io.emit('new_alert', alert);
+    }
+
+    if (status === 'clock-in') {
+      const now = new Date(record.timestamp);
+      const hours = now.getHours();
+      // Alert if clocking in extremely late (e.g., after 10 AM)
+      if (hours >= 10 && hours < 18) {
+        const alert = await Alert.create({
+          type: 'unusual_attendance',
+          userId: req.user.id,
+          userEmail: req.user.email,
+          message: `User ${req.user.email} clocked in late at ${now.toLocaleTimeString()}.`,
+        });
+        io.emit('new_alert', alert);
+      }
+    }
 
     // Broadcast to admins
     io.emit('attendance_update', record);
@@ -651,6 +714,62 @@ app.get('/api/attendance', authenticateToken, requireDashboardAccess, async (req
 
     const records = await Attendance.find(query).sort({ timestamp: -1 }).limit(100);
     res.json(records);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Auto clock-out at 6:00 PM (18:00) using node-cron
+cron.schedule('0 18 * * *', async () => {
+  try {
+    console.log('Running scheduled task: Auto Clock-Out at 6 PM');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Find all users who clocked in today but haven't clocked out
+    const users = await User.find({ role: 'user' });
+    
+    for (const user of users) {
+      const lastRecord = await Attendance.findOne({ userId: user._id.toString() }).sort({ timestamp: -1 });
+      if (lastRecord && lastRecord.status === 'clock-in') {
+        // They are clocked in. Need to clock them out.
+        const outRecord = await Attendance.create({
+          userId: user._id.toString(),
+          userEmail: user.email,
+          status: 'clock-out',
+          location: { lat: 0, lng: 0 }, // System auto clockout
+          timestamp: new Date().toISOString(),
+          offline: false
+        });
+        io.emit('attendance_update', outRecord);
+        console.log(`Auto clocked out user ${user.email}`);
+      }
+    }
+  } catch (err) {
+    console.error('Auto clock-out error:', err);
+  }
+});
+
+// Admin manual clock-in for a worker
+app.post('/api/attendance/admin-clockin', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { targetUserId } = req.body;
+    const targetUser: any = await User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const newRecord = await Attendance.create({
+      userId: targetUser._id.toString(),
+      userEmail: targetUser.email,
+      status: 'clock-in',
+      location: { lat: 0, lng: 0 }, // Admin override
+      timestamp: new Date().toISOString(),
+      offline: false
+    });
+
+    io.emit('attendance_update', newRecord);
+    res.status(201).json(newRecord);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
