@@ -27,7 +27,7 @@ export function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'model', text: 'Hello! I am your AI assistant for the Glass Facade system. How can I help you today?' }
+    { role: 'model', text: 'Hello! I am your AI assistant for the Glass Fab System. How can I help you today?' }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,7 +44,7 @@ export function Chatbot() {
         chatRef.current = ai.chats.create({
           model: 'gemini-3.1-flash-lite-preview',
           config: {
-            systemInstruction: 'You are a helpful, professional AI assistant for the Glass Facade Attendance and Site Management system. Your role is to help admins and workers understand how to use the dashboard, manage site geofences, and review attendance logs. Keep your answers concise and highly relevant.',
+            systemInstruction: 'You are a helpful, professional AI assistant for the Glass Fab Attendance and Site Management system. Your role is to help admins and workers understand how to use the dashboard, manage site geofences, and review attendance logs. Keep your answers concise and highly relevant.',
           }
         });
       } catch (err: any) {

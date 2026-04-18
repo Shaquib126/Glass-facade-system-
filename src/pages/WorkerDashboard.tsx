@@ -51,6 +51,44 @@ export default function WorkerDashboard() {
     fetchSites();
   }, []);
 
+  // Auto-logout on 15 minutes of inactivity
+  useEffect(() => {
+    const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes configurable
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        setMessage('You have been logged out due to inactivity.');
+        setStatus('error');
+        setTimeout(() => logout(), 2000);
+      }, INACTIVITY_LIMIT_MS);
+    };
+
+    const handleActivity = () => {
+      resetTimer();
+    };
+
+    // Attach listeners to detect user activity
+    window.addEventListener('mousemove', handleActivity);
+    window.addEventListener('keydown', handleActivity);
+    window.addEventListener('scroll', handleActivity);
+    window.addEventListener('click', handleActivity);
+    window.addEventListener('touchstart', handleActivity);
+
+    // Init timer
+    resetTimer();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      window.removeEventListener('mousemove', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('scroll', handleActivity);
+      window.removeEventListener('click', handleActivity);
+      window.removeEventListener('touchstart', handleActivity);
+    };
+  }, [logout]);
+
   useEffect(() => {
     if (view === 'profile' && !user?.hasFaceDescriptor && enrollStatus === 'idle') {
       startEnrollCamera();
@@ -367,7 +405,10 @@ export default function WorkerDashboard() {
       <header className="p-6 flex justify-between items-center border-b border-card-border bg-card-bg backdrop-blur-md sticky top-0 z-50">
         <div>
           <h1 className="text-xl font-bold">Hello, {user?.name}</h1>
-          <p className="text-sm text-text-s">{new Date().toLocaleDateString()}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-accent uppercase hover:opacity-80 transition-opacity">Glass Fab Systems</a>
+            <span className="text-text-s text-sm">• {new Date().toLocaleDateString()}</span>
+          </div>
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="icon" onClick={toggleTheme}>

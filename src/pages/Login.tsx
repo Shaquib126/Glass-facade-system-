@@ -161,7 +161,7 @@ export default function Login() {
           <div className="w-16 h-16 bg-accent rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-accent/20">
             <HardHat className="w-8 h-8 text-black" />
           </div>
-          <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-3xl font-bold text-text-p tracking-tight uppercase hover:text-accent transition-colors">Glass Facade</a>
+          <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-3xl font-bold text-text-p tracking-tight uppercase hover:text-accent transition-colors">Glass Fab System</a>
           <p className="text-text-s mt-2">Field Attendance System</p>
         </div>
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '../store';
 import { socket } from '../lib/socket';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
@@ -7,6 +7,50 @@ import { Input } from '../components/ui/Input';
 import { format } from 'date-fns';
 import { Edit2, Trash2, X, LogOut, Filter, Download, Bell, AlertTriangle, Moon, Sun, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const UserAutocomplete = ({ users, value, onChange }: { users: any[], value: string, onChange: (val: string) => void }) => {
+  const [search, setSearch] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedUser = users.find(u => u._id === value);
+  const displayValue = isOpen ? search : (value === 'all' ? '' : (selectedUser ? selectedUser.name : ''));
+
+  return (
+    <div className="relative w-full flex-1 sm:w-48 sm:flex-none" ref={wrapperRef}>
+      <Input
+        type="text"
+        placeholder={value === 'all' && !isOpen ? 'All Workers' : 'Search worker...'}
+        value={displayValue}
+        onFocus={() => { setIsOpen(true); setSearch(''); }}
+        onChange={(e) => { setSearch(e.target.value); setIsOpen(true); }}
+        className="h-9 text-xs bg-bg pr-8"
+      />
+      {isOpen && (
+        <div className="absolute z-10 w-full mt-1 bg-card-bg border border-card-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+           <div className="px-3 py-2 text-xs hover:bg-bg cursor-pointer" onClick={() => { onChange('all'); setSearch(''); setIsOpen(false); }}>
+             All Workers
+           </div>
+           {users.filter(u => u.name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase())).map(u => (
+             <div key={u._id} className="px-3 py-2 text-xs hover:bg-bg cursor-pointer" onClick={() => { onChange(u._id); setSearch(''); setIsOpen(false); }}>
+               {u.name} <span className="text-text-s ml-1 font-mono">({u.email})</span>
+             </div>
+           ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function AdminDashboard() {
   const { token, user, logout } = useAuthStore();
@@ -457,7 +501,7 @@ export default function AdminDashboard() {
 
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-card-border bg-card-bg z-10">
-        <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-[16px] font-extrabold tracking-tight text-accent uppercase hover:opacity-80 transition-opacity">Glass Facade</a>
+        <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-[16px] font-extrabold tracking-tight text-accent uppercase hover:opacity-80 transition-opacity">Glass Fab System</a>
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={toggleTheme}>
             {isDark ? <Sun className="w-5 h-5 text-accent" /> : <Moon className="w-5 h-5 text-accent" />}
@@ -476,7 +520,7 @@ export default function AdminDashboard() {
 
       {/* Sidebar */}
       <div className="w-[240px] border-r border-card-border p-8 flex-col hidden md:flex">
-        <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-[18px] font-extrabold tracking-tight text-accent mb-12 uppercase hover:opacity-80 transition-opacity">Glass Facade</a>
+        <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-[18px] font-extrabold tracking-tight text-accent mb-12 uppercase hover:opacity-80 transition-opacity">Glass Fab System</a>
         <div className="py-3 text-[14px] text-text-p font-semibold flex items-center gap-3 cursor-pointer">
           <div className="w-1.5 h-1.5 rounded-full bg-accent"></div>
           Overview
@@ -515,7 +559,7 @@ export default function AdminDashboard() {
           <div className="flex justify-between items-end mb-2">
             <div>
               <h1 className="text-[28px] font-bold tracking-tight">Command Center</h1>
-              <p className="text-[14px] text-text-s">Glass Facade System</p>
+              <p className="text-[14px] text-text-s">Glass Fab System</p>
             </div>
             <div className="bg-success/10 border border-success/20 text-success px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-2 shadow-sm">
               <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span>
@@ -556,29 +600,29 @@ export default function AdminDashboard() {
                   <div className="px-6 py-4 border-b border-card-border bg-card-bg/50">
                     <form onSubmit={applyFilters} className="flex flex-col sm:flex-row gap-3">
                       <div className="flex gap-2 flex-col sm:flex-row flex-1">
-                        <Input 
-                          type="date" 
-                          className="h-9 text-xs bg-bg flex-1" 
-                          value={filterStartDate}
-                          onChange={e => setFilterStartDate(e.target.value)}
-                        />
-                        <Input 
-                          type="date" 
-                          className="h-9 text-xs bg-bg flex-1" 
-                          value={filterEndDate}
-                          onChange={e => setFilterEndDate(e.target.value)}
+                        <div className="flex items-center gap-2 bg-bg border border-card-border rounded-md px-2 h-9 flex-1 group focus-within:ring-1 focus-within:ring-accent/20 focus-within:border-accent/40 transition-shadow">
+                          <input 
+                              type="date" 
+                              className="bg-transparent text-xs outline-none text-text-p flex-1 min-w-[100px] cursor-pointer" 
+                              value={filterStartDate}
+                              onChange={e => setFilterStartDate(e.target.value)}
+                              title="Start Date"
+                          />
+                          <span className="text-text-s text-xs font-mono">-</span>
+                          <input 
+                              type="date" 
+                              className="bg-transparent text-xs outline-none text-text-p flex-1 min-w-[100px] cursor-pointer" 
+                              value={filterEndDate}
+                              onChange={e => setFilterEndDate(e.target.value)}
+                              title="End Date"
+                          />
+                        </div>
+                        <UserAutocomplete 
+                          users={users} 
+                          value={filterUserId} 
+                          onChange={(val) => setFilterUserId(val)} 
                         />
                       </div>
-                      <select 
-                        className="flex h-9 w-full sm:w-40 rounded-md border border-card-border bg-bg px-2 py-1 text-xs text-text-p focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/20"
-                        value={filterUserId}
-                        onChange={e => setFilterUserId(e.target.value)}
-                      >
-                        <option value="all">All Workers</option>
-                        {users.map(u => (
-                          <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
-                        ))}
-                      </select>
                       <div className="flex gap-2">
                         <Button type="submit" size="sm" className="h-9 px-4 text-xs bg-accent/10 text-accent hover:bg-accent/20">
                           <Filter className="w-3.5 h-3.5 mr-1" /> Filter
