@@ -101,6 +101,15 @@ const alertSchema = new mongoose.Schema({
 });
 const Alert = mongoose.model('Alert', alertSchema);
 
+const feedbackSchema = new mongoose.Schema({
+  userId: String,
+  userName: String,
+  feedback: { type: String, required: true },
+  rating: { type: Number, required: true, min: 1, max: 5 },
+  timestamp: { type: Date, default: Date.now }
+});
+const Feedback = mongoose.model('Feedback', feedbackSchema);
+
 // Seed admin user
 async function seedAdmin() {
   try {
@@ -405,6 +414,88 @@ app.get('/api/users', authenticateToken, requireDashboardAccess, async (req: any
     const users = await User.find({}, { password: 0 });
     res.json(users);
   } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/api/admin/user-password', authenticateToken, requireAdmin, async (req: any, res: any) => {
+  try {
+    const { targetUserId, newPassword } = req.body;
+    if (!targetUserId || !newPassword) {
+      return res.status(400).json({ message: 'Target user and new password are required' });
+    }
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await User.findByIdAndUpdate(targetUserId, { password: hashedPassword });
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.post('/api/feedback', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { feedback, rating } = req.body;
+    const user = await User.findById(req.user.id);
+    const newFeedback = await Feedback.create({
+      userId: req.user.id,
+      userName: user ? user.name : 'Unknown User',
+      feedback,
+      rating
+    });
+    res.status(201).json(newFeedback);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/feedback', authenticateToken, requireDashboardAccess, async (req: any, res: any) => {
+  try {
+    const feedbacks = await Feedback.find().sort({ timestamp: -1 }).limit(100);
+    res.json(feedbacks);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { startDate, endDate, userId } = req.query;
+    let query: any = {};
+
+    if (userId && userId !== 'all') {
+      query.userId = userId;
+    }
+
+    if (startDate || endDate) {
+      query.timestamp = {};
+      if (startDate) query.timestamp.$gte = new Date(startDate).toISOString();
+      if (endDate) query.timestamp.$lte = new Date(`${endDate}T23:59:59.999Z`).toISOString();
+    }
+
+    const records = await Attendance.find(query).sort({ timestamp: -1 });
+
+    const csvRows = [
+      ['Date/Time', 'User Email', 'Status', 'Latitude', 'Longitude', 'Offline Sync']
+    ];
+
+    for (const r of (records as any[])) {
+      csvRows.push([
+        new Date(r.timestamp).toLocaleString(),
+        r.userEmail || '',
+        r.status || '',
+        r.location?.lat || '',
+        r.location?.lng || '',
+        r.offline ? 'Yes' : 'No'
+      ]);
+    }
+
+    const csvString = csvRows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    
+    res.header('Content-Type', 'text/csv');
+    res.attachment('attendance_report.csv');
+    res.send(csvString);
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
 });

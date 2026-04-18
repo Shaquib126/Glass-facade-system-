@@ -22,6 +22,9 @@ export default function AdminDashboard() {
   const [filterEndDate, setFilterEndDate] = useState('');
   const [filterUserId, setFilterUserId] = useState('');
   const [isFiltering, setIsFiltering] = useState(false);
+  
+  const [feedbacks, setFeedbacks] = useState<any[]>([]);
+  
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newName, setNewName] = useState('');
@@ -31,6 +34,9 @@ export default function AdminDashboard() {
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '', ottHours: '' });
+
+  const [passwordResetUser, setPasswordResetUser] = useState<any>(null);
+  const [adminNewPassword, setAdminNewPassword] = useState('');
   
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   
@@ -91,14 +97,16 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const [usersRes, attRes, sitesRes] = await Promise.all([
+      const [usersRes, attRes, sitesRes, fetchbacksRes] = await Promise.all([
         fetch('/api/users', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/attendance', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/sites', { headers: { Authorization: `Bearer ${token}` } })
+        fetch('/api/sites', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/feedback', { headers: { Authorization: `Bearer ${token}` } })
       ]);
       if (usersRes.ok) setUsers(await usersRes.json());
       if (attRes.ok) setAttendance(await attRes.json());
       if (sitesRes.ok) setSites(await sitesRes.json());
+      if (fetchbacksRes.ok) setFeedbacks(await fetchbacksRes.json());
     } catch (e) {
       console.error(e);
     }
@@ -230,6 +238,60 @@ export default function AdminDashboard() {
       if (res.ok) fetchData();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleAdminResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordResetUser || !adminNewPassword) return;
+    try {
+      const res = await fetch('/api/admin/user-password', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ targetUserId: passwordResetUser._id, newPassword: adminNewPassword })
+      });
+      if (res.ok) {
+        setPasswordResetUser(null);
+        setAdminNewPassword('');
+        setShowNotificationToast({ message: 'Password reset successfully', show: true });
+        setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to update password');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error updating password');
+    }
+  };
+
+  const downloadAttendanceReport = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (filterStartDate) params.append('startDate', filterStartDate);
+      if (filterEndDate) params.append('endDate', filterEndDate);
+      if (filterUserId && filterUserId !== 'all') params.append('userId', filterUserId);
+
+      const res = await fetch(`/api/reports/attendance/export?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to download report');
+      
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `attendance_report_${new Date().getTime()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to download attendance report');
     }
   };
 
@@ -395,7 +457,7 @@ export default function AdminDashboard() {
 
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 border-b border-card-border bg-card-bg z-10">
-        <div className="text-[16px] font-extrabold tracking-tight text-accent uppercase">Glass Facade</div>
+        <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-[16px] font-extrabold tracking-tight text-accent uppercase hover:opacity-80 transition-opacity">Glass Facade</a>
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={toggleTheme}>
             {isDark ? <Sun className="w-5 h-5 text-accent" /> : <Moon className="w-5 h-5 text-accent" />}
@@ -414,7 +476,7 @@ export default function AdminDashboard() {
 
       {/* Sidebar */}
       <div className="w-[240px] border-r border-card-border p-8 flex-col hidden md:flex">
-        <div className="text-[18px] font-extrabold tracking-tight text-accent mb-12 uppercase">Glass Facade</div>
+        <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-[18px] font-extrabold tracking-tight text-accent mb-12 uppercase hover:opacity-80 transition-opacity">Glass Facade</a>
         <div className="py-3 text-[14px] text-text-p font-semibold flex items-center gap-3 cursor-pointer">
           <div className="w-1.5 h-1.5 rounded-full bg-accent"></div>
           Overview
@@ -521,6 +583,9 @@ export default function AdminDashboard() {
                         <Button type="submit" size="sm" className="h-9 px-4 text-xs bg-accent/10 text-accent hover:bg-accent/20">
                           <Filter className="w-3.5 h-3.5 mr-1" /> Filter
                         </Button>
+                        <Button type="button" size="sm" onClick={downloadAttendanceReport} className="h-9 px-4 text-xs bg-success/10 text-success hover:bg-success/20">
+                          <Download className="w-3.5 h-3.5 mr-1" /> Export
+                        </Button>
                         {isFiltering && (
                           <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" onClick={clearFilters}>
                             Clear
@@ -602,6 +667,28 @@ export default function AdminDashboard() {
                       </div>
                     ))}
                     {sites.length === 0 && <p className="text-text-s col-span-full text-center py-4 text-xs bg-bg/50 rounded-xl border border-dashed border-card-border">No sites currently configured.</p>}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Bento 3.5: User Feedback Feed */}
+              <Card className="flex flex-col h-[300px] shadow-sm">
+                <CardHeader className="pb-3 border-b border-card-border/50">
+                  <CardTitle>Worker Feedback</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto px-6 py-0">
+                  <div className="space-y-0">
+                    {feedbacks.length === 0 && <p className="text-text-s text-center py-8 text-sm">No feedback received yet</p>}
+                    {feedbacks.map((fb, i) => (
+                      <div key={fb._id || i} className="py-4 border-b border-card-border last:border-0 hover:bg-card-border/10 transition-colors">
+                        <div className="flex justify-between items-start mb-1">
+                          <p className="font-semibold text-sm">{fb.userName || 'Unknown User'}</p>
+                          <span className="text-xs text-text-s">{format(new Date(fb.timestamp), 'MMM dd, yyyy')}</span>
+                        </div>
+                        <div className="text-xs text-accent mb-2 font-mono">Rating: {fb.rating}/5</div>
+                        <p className="text-xs text-text-p leading-relaxed">{fb.feedback}</p>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
@@ -728,6 +815,9 @@ export default function AdminDashboard() {
                                   <LogOut className="w-3.5 h-3.5" />
                                 </button>
                               )}
+                              <button onClick={() => setPasswordResetUser(u)} title="Reset Password" className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-warning shadow-sm transition-colors">
+                                <LogOut className="w-3.5 h-3.5" style={{transform: "rotate(-90deg)"}}/>
+                              </button>
                               <button onClick={() => startEditing(u)} className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-accent shadow-sm transition-colors">
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
@@ -747,6 +837,41 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Password Reset Modal */}
+      {passwordResetUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-bg border border-card-border rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-card-border">
+              <h2 className="text-lg font-bold">Reset Password</h2>
+              <button onClick={() => setPasswordResetUser(null)} className="text-text-s hover:text-text-p">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleAdminResetPassword} className="p-6 space-y-4">
+              <div className="space-y-2">
+                <p className="text-sm text-text-s mb-4">Set a new password for <strong className="text-text-p">{passwordResetUser.name}</strong> ({passwordResetUser.email}).</p>
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">New Password</label>
+                <Input 
+                  type="text" 
+                  value={adminNewPassword} 
+                  onChange={e => setAdminNewPassword(e.target.value)} 
+                  required 
+                  placeholder="Enter new password"
+                />
+              </div>
+              <div className="pt-4 flex gap-3">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setPasswordResetUser(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1 bg-warning/20 hover:bg-warning/30 text-warning">
+                  Reset Password
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Edit User Modal */}
       {editingUser && (

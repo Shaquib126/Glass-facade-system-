@@ -15,9 +15,14 @@ export default function WorkerDashboard() {
   const [status, setStatus] = useState<'idle' | 'camera' | 'processing' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [actionType, setActionType] = useState<'clock-in' | 'clock-out' | null>(null);
-  const [view, setView] = useState<'main' | 'history' | 'profile'>('main');
+  const [view, setView] = useState<'main' | 'history' | 'profile' | 'feedback'>('main');
   const [history, setHistory] = useState<any[]>([]);
   const [sites, setSites] = useState<any[]>([]);
+  
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   
   const [editName, setEditName] = useState(user?.name || '');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -84,6 +89,32 @@ export default function WorkerDashboard() {
       setProfileError(err.message);
     } finally {
       setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingFeedback(true);
+    setFeedbackMessage('');
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ feedback: feedbackText, rating: feedbackRating })
+      });
+      if (!res.ok) throw new Error('Failed to submit feedback');
+      setFeedbackMessage('Feedback submitted successfully! Thank you.');
+      setFeedbackText('');
+      setFeedbackRating(5);
+      setTimeout(() => {
+        setFeedbackMessage('');
+        setView('main');
+      }, 2000);
+    } catch (err) {
+      console.error(err);
+      setFeedbackMessage('Failed to submit feedback. Try again later.');
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   };
 
@@ -354,6 +385,9 @@ export default function WorkerDashboard() {
               <Button variant="ghost" size="icon" onClick={() => setView('profile')}>
                 <UserIcon className="w-5 h-5" />
               </Button>
+              <Button variant="ghost" className="text-xs" onClick={() => setView('feedback')}>
+                Feedback
+              </Button>
             </>
           )}
           <Button variant="ghost" size="icon" onClick={logout}>
@@ -504,6 +538,59 @@ export default function WorkerDashboard() {
 
                     <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-btn-text font-semibold mt-6" disabled={isUpdatingProfile}>
                       {isUpdatingProfile ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {view === 'feedback' && (
+            <motion.div
+              key="feedback"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+            >
+              <Card>
+                <CardHeader>
+                  <CardTitle>Submit Feedback</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+                    {feedbackMessage && (
+                      <div className="p-3 rounded-xl bg-accent/10 border border-accent/20 text-accent text-sm text-center">
+                        {feedbackMessage}
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-text-s uppercase tracking-wider">Rating (1-5)</label>
+                      <select 
+                        required
+                        value={feedbackRating}
+                        onChange={(e) => setFeedbackRating(Number(e.target.value))}
+                        className="flex h-10 w-full rounded-md border border-input bg-bg px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <option value="5">5 - Excellent</option>
+                        <option value="4">4 - Good</option>
+                        <option value="3">3 - Average</option>
+                        <option value="2">2 - Poor</option>
+                        <option value="1">1 - Terrible</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-text-s uppercase tracking-wider">Your Comments</label>
+                      <textarea
+                        required
+                        rows={4}
+                        placeholder="Tell us what you think..."
+                        value={feedbackText}
+                        onChange={(e) => setFeedbackText(e.target.value)}
+                        className="flex w-full rounded-md border border-input bg-bg px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      />
+                    </div>
+                    <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-btn-text" disabled={isSubmittingFeedback}>
+                      {isSubmittingFeedback ? 'Submitting...' : 'Submit Feedback'}
                     </Button>
                   </form>
                 </CardContent>
