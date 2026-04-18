@@ -68,7 +68,10 @@ export default function AdminDashboard() {
   const [isFiltering, setIsFiltering] = useState(false);
   
   const [feedbacks, setFeedbacks] = useState<any[]>([]);
-  
+  const [galleryImages, setGalleryImages] = useState<any[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newName, setNewName] = useState('');
@@ -141,16 +144,18 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const [usersRes, attRes, sitesRes, fetchbacksRes] = await Promise.all([
+      const [usersRes, attRes, sitesRes, fetchbacksRes, galleryRes] = await Promise.all([
         fetch('/api/users', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/attendance', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/sites', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/feedback', { headers: { Authorization: `Bearer ${token}` } })
+        fetch('/api/feedback', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/gallery', { headers: { Authorization: `Bearer ${token}` } })
       ]);
       if (usersRes.ok) setUsers(await usersRes.json());
       if (attRes.ok) setAttendance(await attRes.json());
       if (sitesRes.ok) setSites(await sitesRes.json());
       if (fetchbacksRes.ok) setFeedbacks(await fetchbacksRes.json());
+      if (galleryRes && galleryRes.ok) setGalleryImages(await galleryRes.json());
     } catch (e) {
       console.error(e);
     }
@@ -229,6 +234,65 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image size must be less than 5MB");
+      return;
+    }
+
+    setUploadingImage(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      try {
+        const res = await fetch('/api/gallery', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            title: file.name,
+            imageUrl: reader.result
+          })
+        });
+
+        if (res.ok) {
+          const newImage = await res.json();
+          setGalleryImages([newImage, ...galleryImages]);
+          setShowNotificationToast({ message: 'Image uploaded successfully.', show: true });
+          setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
+        } else {
+          const data = await res.json();
+          alert(data.message || 'Failed to upload image');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Failed to upload image');
+      } finally {
+        setUploadingImage(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDeleteImage = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this image?')) return;
+    try {
+      const res = await fetch(`/api/gallery/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setGalleryImages(galleryImages.filter(img => img._id !== id));
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -733,6 +797,65 @@ export default function AdminDashboard() {
                         <p className="text-xs text-text-p leading-relaxed">{fb.feedback}</p>
                       </div>
                     ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Bento Gallery: Documentations & Images */}
+              <Card className="flex flex-col shadow-sm min-h-[300px]">
+                <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-card-border/50">
+                  <CardTitle>Project Gallery</CardTitle>
+                  {(user?.role === 'admin' || user?.role === 'manager') && (
+                    <>
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        onChange={handleImageUpload} 
+                        className="hidden" 
+                        accept="image/*"
+                      />
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => fileInputRef.current?.click()} 
+                        disabled={uploadingImage}
+                        className="h-8 px-3 text-xs bg-accent hover:bg-accent/90 text-btn-text shadow-sm font-semibold"
+                      >
+                        {uploadingImage ? 'Uploading...' : '+ Upload Image'}
+                      </Button>
+                    </>
+                  )}
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto px-6 py-6 border-bg">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {galleryImages.map(img => (
+                      <div key={img._id} className="relative group aspect-square rounded-xl overflow-hidden border border-card-border bg-bg/50">
+                        <img 
+                          src={img.imageUrl} 
+                          alt={img.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                        />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-2 text-center pointer-events-none">
+                          <p className="text-white text-xs font-bold truncate w-full pointer-events-auto">{img.title}</p>
+                          <p className="text-white/70 text-[10px] pointer-events-auto">{img.uploadedBy?.name || 'Admin'}</p>
+                        </div>
+                        {(user?.role === 'admin' || user?.role === 'manager') && (
+                          <button 
+                            className="absolute top-2 right-2 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                            onClick={() => handleDeleteImage(img._id)}
+                            title="Delete Image"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {galleryImages.length === 0 && (
+                      <div className="col-span-full py-12 text-center text-text-s text-sm border-2 border-dashed border-card-border rounded-xl">
+                        No images in the gallery.
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

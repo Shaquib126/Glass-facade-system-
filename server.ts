@@ -39,7 +39,8 @@ const transporter = nodemailer.createTransport({
 });
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 let dbConnectionError = 'Connecting...';
 
@@ -109,6 +110,14 @@ const feedbackSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 const Feedback = mongoose.model('Feedback', feedbackSchema);
+
+const gallerySchema = new mongoose.Schema({
+  title: String,
+  imageUrl: { type: String, required: true },
+  uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  uploadedAt: { type: Date, default: Date.now }
+});
+const Gallery = mongoose.model('Gallery', gallerySchema);
 
 // Seed admin user
 async function seedAdmin() {
@@ -890,6 +899,36 @@ app.post('/api/attendance/admin-clockout', authenticateToken, requireAdminOrMana
     res.status(201).json(newRecord);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Gallery Routes
+app.get('/api/gallery', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const images = await Gallery.find().sort({ uploadedAt: -1 }).populate('uploadedBy', 'name email');
+    res.json(images);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching gallery' });
+  }
+});
+
+app.post('/api/gallery', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { title, imageUrl } = req.body;
+    if (!imageUrl) return res.status(400).json({ message: 'Image URL is required' });
+    const newImage = await Gallery.create({ title, imageUrl, uploadedBy: req.user.id });
+    res.status(201).json(newImage);
+  } catch (error) {
+    res.status(500).json({ message: 'Error uploading image' });
+  }
+});
+
+app.delete('/api/gallery/:id', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    await Gallery.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Image deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting image' });
   }
 });
 
