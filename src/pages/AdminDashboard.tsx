@@ -157,6 +157,29 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleAdminClockOut = async (userId: string) => {
+    try {
+      const res = await fetch('/api/attendance/admin-clockout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ targetUserId: userId })
+      });
+      if (res.ok) {
+        fetchFilteredAttendance();
+        setShowNotificationToast({ message: 'Successfully clocked out user.', show: true });
+        setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to clock out user');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
@@ -165,7 +188,7 @@ export default function AdminDashboard() {
         email: newEmail, 
         password: newPassword, 
         name: newName, 
-        role: 'user', 
+        role: newRole, 
         dailyWage: newDailyWage ? Number(newDailyWage) : 0,
         ottHours: newOttHours ? Number(newOttHours) : 0
       };
@@ -182,6 +205,7 @@ export default function AdminDashboard() {
         setNewEmail('');
         setNewPassword('');
         setNewName('');
+        setNewRole('user');
         setNewDailyWage('');
         setNewOttHours('');
         fetchData(); // Refresh user list
@@ -687,13 +711,21 @@ export default function AdminDashboard() {
                           {canManageUsers && (
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
                               {/* Admin Clock-in Button (if not clocked in today) */}
-                              {!attendance.some(a => a.userId === u._id && a.status === 'clock-in' && new Date(a.timestamp).toDateString() === new Date().toDateString()) && (
+                              {!attendance.some(a => a.userId === u._id && a.status === 'clock-in' && new Date(a.timestamp).toDateString() === new Date().toDateString()) ? (
                                 <button 
                                   onClick={() => handleAdminClockIn(u._id)} 
                                   title="Force Clock In"
                                   className="p-1.5 bg-bg border border-success/30 rounded-lg text-success hover:bg-success/10 shadow-sm transition-colors"
                                 >
                                   <CheckCircle className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => handleAdminClockOut(u._id)} 
+                                  title="Force Clock Out"
+                                  className="p-1.5 bg-bg border border-red-500/30 rounded-lg text-red-500 hover:bg-red-500/10 shadow-sm transition-colors"
+                                >
+                                  <LogOut className="w-3.5 h-3.5" />
                                 </button>
                               )}
                               <button onClick={() => startEditing(u)} className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-accent shadow-sm transition-colors">

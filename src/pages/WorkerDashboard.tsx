@@ -293,9 +293,11 @@ export default function WorkerDashboard() {
         if (!res.ok) throw new Error('Failed to fetch face profile');
         
         const storedDescriptor = new Float32Array(Object.values(data.faceDescriptor));
-        const isMatch = compareDescriptors(descriptor, storedDescriptor);
+        const { isMatch, distance } = compareDescriptors(descriptor, storedDescriptor);
         
-        if (!isMatch) throw new Error('Face verification failed');
+        console.log(`[WorkerDashboard] Face Verification Distance: ${distance.toFixed(4)}. Confidence: ${(1 - distance).toFixed(4)}.`);
+        
+        if (!isMatch) throw new Error(`Face verification failed. Confidence: ${(1 - distance).toFixed(2)} (Distance: ${distance.toFixed(2)})`);
       }
 
       // 4. Record Attendance

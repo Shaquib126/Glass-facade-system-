@@ -35,5 +35,5 @@ export const getFaceDescriptor = async (mediaEl: HTMLVideoElement | HTMLCanvasEl
 
 export const compareDescriptors = (desc1: Float32Array, desc2: Float32Array, threshold: number = DEFAULT_MATCH_THRESHOLD) => {
   const distance = faceapi.euclideanDistance(desc1, desc2);
-  return distance < threshold;
+  return { isMatch: distance < threshold, distance };
 };

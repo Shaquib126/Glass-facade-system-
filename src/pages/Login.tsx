@@ -131,6 +131,7 @@ export default function Login() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Face login failed');
       
+      console.log(`[Login] Successful Face Verification. Distance: ${data.distance?.toFixed(4)}. Confidence: ${(1 - data.distance)?.toFixed(4)}`);
       setAuth(data.token, data.user);
     } catch (err: any) {
       stopCamera();

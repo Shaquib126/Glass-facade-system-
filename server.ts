@@ -269,8 +269,9 @@ app.post('/api/auth/login-face', async (req: any, res: any) => {
     }
 
     const distance = euclideanDistance(faceDescriptor, user.faceDescriptor);
+    console.log(`[Face Verification] Distance for ${email}: ${distance.toFixed(4)} (Threshold: 0.5)`);
     if (distance > 0.5) { // 0.5 is a standard strict threshold for face-api.js
-      return res.status(401).json({ message: 'Face verification failed' });
+      return res.status(401).json({ message: `Face verification failed. Confidence score: ${(1 - distance).toFixed(2)} (Distance: ${distance.toFixed(2)})`, distance });
     }
 
     const token = jwt.sign({ id: user._id, role: user.role, email: user.email }, JWT_SECRET, { expiresIn: '24h' });
@@ -283,7 +284,8 @@ app.post('/api/auth/login-face', async (req: any, res: any) => {
         role: user.role,
         name: user.name,
         hasFaceDescriptor: true
-      }
+      },
+      distance
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -763,6 +765,31 @@ app.post('/api/attendance/admin-clockin', authenticateToken, requireAdminOrManag
       userId: targetUser._id.toString(),
       userEmail: targetUser.email,
       status: 'clock-in',
+      location: { lat: 0, lng: 0 }, // Admin override
+      timestamp: new Date().toISOString(),
+      offline: false
+    });
+
+    io.emit('attendance_update', newRecord);
+    res.status(201).json(newRecord);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Admin manual clock-out for a worker
+app.post('/api/attendance/admin-clockout', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { targetUserId } = req.body;
+    const targetUser: any = await User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const newRecord = await Attendance.create({
+      userId: targetUser._id.toString(),
+      userEmail: targetUser.email,
+      status: 'clock-out',
       location: { lat: 0, lng: 0 }, // Admin override
       timestamp: new Date().toISOString(),
       offline: false
