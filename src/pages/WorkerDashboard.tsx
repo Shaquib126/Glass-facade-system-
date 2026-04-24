@@ -398,9 +398,13 @@ export default function WorkerDashboard() {
           body: JSON.stringify(record),
         });
         if (!attRes.ok) throw new Error('Failed to record attendance');
-        fetchHistory(); // Refresh history after successful clock-in/out
+        
+        // Optimistic update for instant UI feedback
+        setHistory(prev => [record, ...prev]);
+        fetchHistory(); // Refresh history with server IDs
       } else {
         addToQueue(record);
+        setHistory(prev => [record, ...prev]); // optimistic update
       }
 
       setStatus('success');
@@ -476,6 +480,11 @@ export default function WorkerDashboard() {
                         <div>
                           <p className="font-medium text-[14px]">
                             {record.status === 'clock-in' ? 'Clocked In' : 'Clocked Out'}
+                            {record.workedHours !== undefined && (
+                              <span className="ml-2 text-[10px] text-text-p bg-bg px-2 py-0.5 rounded-md border border-card-border font-medium shadow-sm">
+                                {record.workedHours} hrs
+                              </span>
+                            )}
                           </p>
                           <p className="text-[11px] text-text-s">
                             {format(new Date(record.timestamp), 'MMM d, yyyy • hh:mm a')}

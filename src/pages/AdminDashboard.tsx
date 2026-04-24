@@ -72,6 +72,22 @@ export default function AdminDashboard() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Compute Daily Hours per Worker
+  const dailyWorkerHours = React.useMemo(() => {
+    const summary: Record<string, { email: string, date: string, totalHours: number }> = {};
+    attendance.forEach(record => {
+      if (record.status === 'clock-out' && record.workedHours !== undefined) {
+        const dateStr = new Date(record.timestamp).toLocaleDateString();
+        const key = `${record.userId}-${dateStr}`;
+        if (!summary[key]) {
+          summary[key] = { email: record.userEmail, date: dateStr, totalHours: 0 };
+        }
+        summary[key].totalHours += record.workedHours;
+      }
+    });
+    return Object.values(summary).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [attendance]);
+
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newName, setNewName] = useState('');
@@ -753,11 +769,18 @@ export default function AdminDashboard() {
                             </div>
                           </div>
                           <div className="flex items-center justify-between mt-1">
-                            <div className="text-[12px] text-text-s truncate">
-                              {record.status === 'clock-in' ? (
-                                <span className="text-success font-medium">Clocked In</span>
-                              ) : (
-                                <span className="text-red-400 font-medium">Clocked Out</span>
+                            <div className="flex items-center gap-2">
+                              <div className="text-[12px] text-text-s truncate">
+                                {record.status === 'clock-in' ? (
+                                  <span className="text-success font-medium">Clocked In</span>
+                                ) : (
+                                  <span className="text-red-400 font-medium">Clocked Out</span>
+                                )}
+                              </div>
+                              {record.workedHours !== undefined && (
+                                <div className="text-[10px] text-text-p bg-bg px-2 py-0.5 rounded-md border border-card-border font-medium shadow-sm">
+                                  {record.workedHours} hrs
+                                </div>
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 text-[10px] text-success bg-success/10 px-2 py-0.5 rounded pl-1">
@@ -1037,6 +1060,31 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Bento 6: Daily Hours Summary */}
+              <Card className="flex flex-col shadow-sm max-h-[350px]">
+                <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-card-border/50">
+                  <CardTitle>Daily Hours Summary</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto px-0 py-0">
+                  <div className="space-y-0">
+                    {dailyWorkerHours.map((record, i) => (
+                      <div key={i} className="flex flex-col justify-center px-6 py-3 border-b border-card-border last:border-0 group hover:bg-card-border/10 transition-colors">
+                        <div className="flex justify-between items-center w-full">
+                          <p className="font-semibold text-[13px] truncate flex-1">{record.email}</p>
+                          <div className="text-[12px] font-mono font-bold bg-accent/10 border border-accent/20 px-2.5 py-1 rounded-md text-accent ml-3 shadow-sm">
+                            {record.totalHours.toFixed(2)} hrs
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-text-s mt-1">{record.date}</p>
+                      </div>
+                    ))}
+                    {dailyWorkerHours.length === 0 && (
+                      <p className="text-text-s text-center py-6 text-[13px]">No completed multi-hour work shifts today.</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>

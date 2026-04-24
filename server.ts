@@ -79,6 +79,7 @@ const attendanceSchema = new mongoose.Schema({
   },
   timestamp: String,
   offline: Boolean,
+  workedHours: Number, // Computed on clock-out
   createdAt: { type: Date, default: Date.now }
 });
 const Attendance = mongoose.model('Attendance', attendanceSchema);
@@ -496,7 +497,7 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
     const records = await Attendance.find(query).sort({ timestamp: -1 });
 
     const csvRows = [
-      ['Date/Time', 'User Email', 'Status', 'Latitude', 'Longitude', 'Offline Sync']
+      ['Date/Time', 'User Email', 'Status', 'Worked Hours', 'Latitude', 'Longitude', 'Offline Sync']
     ];
 
     for (const r of (records as any[])) {
@@ -504,6 +505,7 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
         new Date(r.timestamp).toLocaleString(),
         r.userEmail || '',
         r.status || '',
+        r.workedHours ?? '',
         r.location?.lat || '',
         r.location?.lng || '',
         r.offline ? 'Yes' : 'No'
@@ -737,13 +739,31 @@ app.post('/api/attendance', authenticateToken, async (req: any, res: any) => {
       }
     }
 
+    let workedHours = undefined;
+    if (status === 'clock-out') {
+      const lastClockIn = await Attendance.findOne({
+        userId: req.user.id,
+        status: 'clock-in'
+      }).sort({ timestamp: -1 });
+
+      if (lastClockIn) {
+        const outTime = new Date(timestamp || new Date().toISOString());
+        const inTime = new Date(lastClockIn.timestamp);
+        // Only calculate if clock out is after clock in, and within a reasonable timeframe (e.g. same day or within 24h)
+        if (outTime > inTime && (outTime.getTime() - inTime.getTime() < 24 * 60 * 60 * 1000)) {
+          workedHours = Number(((outTime.getTime() - inTime.getTime()) / (1000 * 60 * 60)).toFixed(2));
+        }
+      }
+    }
+
     const record = await Attendance.create({
       userId: req.user.id,
       userEmail: req.user.email,
       status, // 'clock-in' or 'clock-out'
       location, // { lat, lng }
       timestamp: timestamp || new Date().toISOString(),
-      offline: !!offline
+      offline: !!offline,
+      workedHours
     });
 
     if (isOutsideGeofence) {
@@ -787,13 +807,31 @@ app.post('/api/attendance/sync', authenticateToken, async (req: any, res: any) =
 
     const inserted = [];
     for (const record of records) {
+      let workedHours = undefined;
+      if (record.status === 'clock-out') {
+        const lastClockIn = await Attendance.findOne({
+          userId: req.user.id,
+          status: 'clock-in',
+          timestamp: { $lt: record.timestamp }
+        }).sort({ timestamp: -1 });
+
+        if (lastClockIn) {
+          const outTime = new Date(record.timestamp);
+          const inTime = new Date(lastClockIn.timestamp);
+          if (outTime > inTime && (outTime.getTime() - inTime.getTime() < 24 * 60 * 60 * 1000)) {
+            workedHours = Number(((outTime.getTime() - inTime.getTime()) / (1000 * 60 * 60)).toFixed(2));
+          }
+        }
+      }
+
       const newRecord = await Attendance.create({
         userId: req.user.id,
         userEmail: req.user.email,
         status: record.status,
         location: record.location,
         timestamp: record.timestamp,
-        offline: true
+        offline: true,
+        workedHours
       });
       inserted.push(newRecord);
       io.emit('attendance_update', newRecord);
@@ -898,13 +936,30 @@ app.post('/api/attendance/admin-clockout', authenticateToken, requireAdminOrMana
       return res.status(404).json({ message: 'User not found' });
     }
 
+    let workedHours = undefined;
+    const lastClockIn = await Attendance.findOne({
+      userId: targetUser._id.toString(),
+      status: 'clock-in'
+    }).sort({ timestamp: -1 });
+
+    const nowStr = new Date().toISOString();
+
+    if (lastClockIn) {
+      const outTime = new Date(nowStr);
+      const inTime = new Date(lastClockIn.timestamp);
+      if (outTime > inTime && (outTime.getTime() - inTime.getTime() < 24 * 60 * 60 * 1000)) {
+        workedHours = Number(((outTime.getTime() - inTime.getTime()) / (1000 * 60 * 60)).toFixed(2));
+      }
+    }
+
     const newRecord = await Attendance.create({
       userId: targetUser._id.toString(),
       userEmail: targetUser.email,
       status: 'clock-out',
       location: { lat: 0, lng: 0 }, // Admin override
-      timestamp: new Date().toISOString(),
-      offline: false
+      timestamp: nowStr,
+      offline: false,
+      workedHours
     });
 
     io.emit('attendance_update', newRecord);
