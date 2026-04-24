@@ -587,6 +587,33 @@ export default function AdminDashboard() {
     setIsAddingSite(true);
   };
 
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUserTab, setSelectedUserTab] = useState('overview');
+
+  const exportUserReport = async (userId: string) => {
+    try {
+      const params = new URLSearchParams();
+      params.append('userId', userId);
+      const res = await fetch(`/api/reports/attendance/export?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to download report');
+      
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `attendance_user_${userId}_${new Date().getTime()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to download attendance report for this user');
+    }
+  };
+
   const openAddSite = () => {
     setEditingSite(null);
     setSiteForm({ name: '', lat: '', lng: '', radius: '100' });
@@ -1005,8 +1032,8 @@ export default function AdminDashboard() {
                   <div className="space-y-0">
                     {users.map((u) => (
                       <div key={u._id} className="flex items-center justify-between px-6 py-4 border-b border-card-border last:border-0 group hover:bg-card-border/10 transition-colors">
-                        <div>
-                          <p className="font-semibold text-[14px] flex items-center gap-2">
+                        <div className="cursor-pointer" onClick={() => { setSelectedUser(u); setSelectedUserTab('overview'); }}>
+                          <p className="font-semibold text-[14px] flex items-center gap-2 hover:text-accent transition-colors">
                             {u.name}
                             <span className="text-[9px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-1.5 py-0.5 rounded font-mono">
                               {u.role}
@@ -1018,45 +1045,10 @@ export default function AdminDashboard() {
                             {u.ottHours > 0 && <p className="text-[10px] text-accent mt-1 font-mono">{u.ottHours}h OTT Allow</p>}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          {canManageUsers && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5">
-                              {/* Admin Clock-in Button (if not clocked in today) */}
-                              {!attendance.some(a => a.userId === u._id && a.status === 'clock-in' && new Date(a.timestamp).toDateString() === new Date().toDateString()) ? (
-                                <button 
-                                  onClick={() => handleAdminClockIn(u._id)} 
-                                  title="Force Clock In"
-                                  className="p-1.5 bg-bg border border-success/30 rounded-lg text-success hover:bg-success/10 shadow-sm transition-colors"
-                                >
-                                  <CheckCircle className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <button 
-                                  onClick={() => handleAdminClockOut(u._id)} 
-                                  title="Force Clock Out"
-                                  className="p-1.5 bg-bg border border-red-500/30 rounded-lg text-red-500 hover:bg-red-500/10 shadow-sm transition-colors"
-                                >
-                                  <LogOut className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              <button 
-                                onClick={() => setMakingSalarySlipForUser(u)} 
-                                title="Send Salary Slip" 
-                                className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-success shadow-sm transition-colors"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                              </button>
-                              <button onClick={() => setPasswordResetUser(u)} title="Reset Password" className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-warning shadow-sm transition-colors">
-                                <LogOut className="w-3.5 h-3.5" style={{transform: "rotate(-90deg)"}}/>
-                              </button>
-                              <button onClick={() => startEditing(u)} className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-accent shadow-sm transition-colors">
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button onClick={() => handleDeleteUser(u._id)} className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-red-400 shadow-sm transition-colors">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
+                        <div className="flex items-center">
+                          <button onClick={() => { setSelectedUser(u); setSelectedUserTab('overview'); }} className="p-1.5 text-text-s hover:text-accent transition-colors bg-bg border border-card-border rounded-lg shadow-sm">
+                            View Details
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1180,6 +1172,171 @@ export default function AdminDashboard() {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Selected User Modal */}
+      {selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-bg border border-card-border rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-6 border-b border-card-border">
+              <h2 className="text-lg font-bold">Worker Profile</h2>
+              <button onClick={() => setSelectedUser(null)} className="text-text-s flex items-center justify-center p-2 rounded-full hover:bg-card-border/50 hover:text-text-p transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex bg-card-bg border-b border-card-border overflow-x-auto no-scrollbar">
+              {['overview', 'actions', 'records'].map(tab => (
+                <button 
+                  key={tab}
+                  onClick={() => setSelectedUserTab(tab)}
+                  className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider whitespace-nowrap transition-colors border-b-2 ${selectedUserTab === tab ? 'border-accent text-accent' : 'border-transparent text-text-s hover:text-text-p'}`}
+                >
+                  {tab === 'records' ? 'Attendance Logs' : tab}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {/* Profile Header */}
+              <div className="flex items-start justify-between border border-card-border bg-card-bg p-4 rounded-xl">
+                <div>
+                  <h3 className="text-lg font-bold truncate flex items-center gap-2">
+                    {selectedUser.name}
+                    <span className="text-[10px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-2 py-0.5 rounded font-mono">
+                      {selectedUser.role}
+                    </span>
+                  </h3>
+                  <p className="text-sm text-text-s mt-1">{selectedUser.email}</p>
+                  
+                  <div className="flex gap-3 mt-3">
+                    <div className="bg-bg border border-card-border px-3 py-1.5 rounded-lg">
+                      <p className="text-[10px] text-text-s uppercase tracking-wider mb-0.5">Daily Wage</p>
+                      <p className="text-sm font-semibold font-mono">₹{selectedUser.dailyWage || 0}</p>
+                    </div>
+                    <div className="bg-bg border border-card-border px-3 py-1.5 rounded-lg">
+                      <p className="text-[10px] text-text-s uppercase tracking-wider mb-0.5">OTT Allow</p>
+                      <p className="text-sm font-semibold font-mono text-accent">{selectedUser.ottHours || 0} hrs</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {selectedUserTab === 'overview' && (
+                <>
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-semibold text-text-s uppercase tracking-wider">Reports & Data</h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      <Button 
+                        className="w-full justify-start gap-3 bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20"
+                        onClick={() => exportUserReport(selectedUser._id)}
+                      >
+                        <Download className="w-4 h-4" />
+                        Download Full Attendance & Logs
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Quick Log Overview */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-semibold text-text-s uppercase tracking-wider">Recent Activity Overview</h4>
+                    <div className="border border-card-border rounded-xl bg-card-bg/50 divide-y divide-card-border">
+                      {attendance.filter(a => a.userId === selectedUser._id).slice(0, 5).map((record, i) => (
+                        <div key={i} className="flex justify-between items-center p-3">
+                          <div>
+                            <p className={`text-xs font-medium ${record.status === 'clock-in' ? 'text-success' : 'text-red-400'}`}>
+                              {record.status === 'clock-in' ? 'Clocked In' : 'Clocked Out'}
+                            </p>
+                            <p className="text-[10px] text-text-s mt-0.5">{format(new Date(record.timestamp), 'MMM dd, yyyy hh:mm a')}</p>
+                          </div>
+                          {record.workedHours !== undefined && (
+                            <div className="text-[10px] font-mono text-accent bg-accent/10 px-2 py-0.5 rounded border border-accent/20">
+                              {record.workedHours} hrs
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {attendance.filter(a => a.userId === selectedUser._id).length === 0 && (
+                        <div className="p-4 text-center text-xs text-text-s">No recent activity detected</div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {selectedUserTab === 'actions' && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-text-s uppercase tracking-wider">Administration Actions</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {!attendance.some(a => a.userId === selectedUser._id && a.status === 'clock-in' && new Date(a.timestamp).toDateString() === new Date().toDateString()) ? (
+                      <Button variant="outline" className="justify-start gap-2 border-success/30 text-success hover:bg-success/10" onClick={() => handleAdminClockIn(selectedUser._id)}>
+                        <CheckCircle className="w-4 h-4" /> Force Clock In
+                      </Button>
+                    ) : (
+                      <Button variant="outline" className="justify-start gap-2 border-red-500/30 text-red-500 hover:bg-red-500/10" onClick={() => handleAdminClockOut(selectedUser._id)}>
+                        <LogOut className="w-4 h-4" /> Force Clock Out
+                      </Button>
+                    )}
+                    
+                    <Button variant="outline" className="justify-start gap-2 border-card-border hover:bg-card-border/20" onClick={() => {
+                      setSelectedUser(null);
+                      startEditing(selectedUser);
+                    }}>
+                      <Edit2 className="w-4 h-4" /> Edit Details
+                    </Button>
+                    
+                    <Button variant="outline" className="justify-start gap-2 border-card-border hover:bg-card-border/20" onClick={() => {
+                      setSelectedUser(null);
+                      setMakingSalarySlipForUser(selectedUser);
+                    }}>
+                      <FileText className="w-4 h-4" /> Issue Salary Slip
+                    </Button>
+
+                    <Button variant="outline" className="justify-start gap-2 border-card-border hover:bg-warning/10 text-warning" onClick={() => {
+                      setSelectedUser(null);
+                      setPasswordResetUser(selectedUser);
+                    }}>
+                      <LogOut className="w-4 h-4" style={{transform: "rotate(-90deg)"}} /> Reset Password
+                    </Button>
+
+                    <Button variant="outline" className="justify-start gap-2 border-red-500/30 hover:bg-red-500/10 text-red-500" onClick={() => {
+                      setSelectedUser(null);
+                      handleDeleteUser(selectedUser._id);
+                    }}>
+                      <Trash2 className="w-4 h-4" /> Delete Worker
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {selectedUserTab === 'records' && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-text-s uppercase tracking-wider">Full Attendance Log</h4>
+                  <div className="border border-card-border rounded-xl bg-card-bg/50 divide-y divide-card-border max-h-[300px] overflow-y-auto">
+                      {attendance.filter(a => a.userId === selectedUser._id).map((record, i) => (
+                        <div key={i} className="flex justify-between items-center p-3 hover:bg-card-border/10 transition-colors">
+                          <div>
+                            <p className={`text-[13px] font-medium ${record.status === 'clock-in' ? 'text-success' : 'text-red-400'}`}>
+                              {record.status === 'clock-in' ? 'Clocked In' : 'Clocked Out'}
+                            </p>
+                            <p className="text-[11px] text-text-s mt-0.5">{format(new Date(record.timestamp), 'MMM dd, yyyy hh:mm a')}</p>
+                          </div>
+                          {record.workedHours !== undefined && (
+                            <div className="text-[11px] font-mono font-bold text-accent bg-accent/10 flex items-center justify-center px-2 py-0.5 rounded border border-accent/20 shadow-sm">
+                              {record.workedHours} hrs
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {attendance.filter(a => a.userId === selectedUser._id).length === 0 && (
+                        <div className="p-8 text-center text-sm text-text-s">No logs available</div>
+                      )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
