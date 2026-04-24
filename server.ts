@@ -1018,6 +1018,8 @@ app.get('/api/salary-slips/me', authenticateToken, async (req: any, res: any) =>
   }
 });
 
+
+
 app.post('/api/salary-slips', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
   try {
     const { userId, period, amount, notes } = req.body;
@@ -1033,13 +1035,30 @@ app.post('/api/salary-slips', authenticateToken, requireAdminOrManager, async (r
       notes
     });
     
-    // Optionally create an alert for the user
+    // Create an alert for the user
     await Alert.create({
       userId: userTarget._id.toString(),
       userEmail: userTarget.email,
       message: `Your salary slip for ${period} has been issued.`,
       type: 'info'
     });
+
+    // Try sending an email
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+      try {
+        await transporter.sendMail({
+          from: `"Attendance App" <${process.env.SMTP_USER}>`,
+          to: userTarget.email,
+          subject: `Your Salary Slip for ${period}`,
+          text: `Hello ${userTarget.name},\n\nYour salary slip for the period ${period} has been issued.\n\nTotal Amount: ₹${amount}\n\nNotes: ${notes || 'N/A'}\n\nPlease check your Worker Dashboard to view the details.\n\nThank you!`
+        });
+        console.log(`Email sent to ${userTarget.email}`);
+      } catch (emailError) {
+        console.error('Error sending email:', emailError);
+      }
+    } else {
+      console.log('Skipping email send. Configure SMTP_USER and SMTP_PASS in Environment Variables to send actual emails.');
+    }
 
     res.status(201).json(newSlip);
   } catch (error) {

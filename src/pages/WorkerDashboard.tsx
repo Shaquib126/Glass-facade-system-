@@ -699,8 +699,26 @@ export default function WorkerDashboard() {
                             {slip.notes}
                           </div>
                         )}
-                        <div className="text-[10px] text-text-s text-right block pt-2 mt-2 border-t border-card-border/50">
-                          Issued: {format(new Date(slip.issuedAt), 'MMM d, yyyy')}
+                        <div className="flex justify-between items-center pt-2 mt-2 border-t border-card-border/50">
+                          <div className="text-[10px] text-text-s">
+                            Issued: {format(new Date(slip.issuedAt), 'MMM d, yyyy')}
+                          </div>
+                          <button 
+                            onClick={() => {
+                              const slipContent = `SALARY SLIP\n--------------------\nPeriod: ${slip.period}\nAmount: ₹${slip.amount}\nStatus: ${slip.status}\nIssued: ${format(new Date(slip.issuedAt), 'MMM d, yyyy')}\n${slip.notes ? `\nNotes: ${slip.notes}` : ''}`;
+                              const blob = new Blob([slipContent], { type: 'text/plain' });
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `Salary_Slip_${slip.period.replace(/ /g, '_')}.txt`;
+                              document.body.appendChild(a);
+                              a.click();
+                              window.URL.revokeObjectURL(url);
+                            }}
+                            className="bg-accent/10 border border-accent/20 text-accent text-[10px] px-3 py-1 font-semibold rounded hover:bg-accent/20 transition-colors uppercase"
+                          >
+                            Download
+                          </button>
                         </div>
                       </div>
                     ))}

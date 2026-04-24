@@ -332,8 +332,8 @@ export default function AdminDashboard() {
         })
       });
       if (res.ok) {
-        setShowNotificationToast({ message: 'Salary slip sent successfully!', show: true });
-        setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
+        setShowNotificationToast({ message: 'Salary slip issued! Workers can view/download it in their dashboard. Email sent if SMTP is configured.', show: true });
+        setTimeout(() => setShowNotificationToast({ message: '', show: false }), 4000);
         setMakingSalarySlipForUser(null);
         setSalarySlipForm({ period: '', amount: '', notes: '' });
       } else {
