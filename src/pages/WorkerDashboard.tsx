@@ -15,9 +15,10 @@ export default function WorkerDashboard() {
   const [status, setStatus] = useState<'idle' | 'camera' | 'processing' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [actionType, setActionType] = useState<'clock-in' | 'clock-out' | null>(null);
-  const [view, setView] = useState<'main' | 'history' | 'profile' | 'feedback'>('main');
+  const [view, setView] = useState<'main' | 'history' | 'profile' | 'feedback' | 'slips'>('main');
   const [history, setHistory] = useState<any[]>([]);
   const [sites, setSites] = useState<any[]>([]);
+  const [slips, setSlips] = useState<any[]>([]);
   
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackRating, setFeedbackRating] = useState(5);
@@ -49,7 +50,21 @@ export default function WorkerDashboard() {
     syncOfflineData();
     fetchHistory();
     fetchSites();
+    fetchSlips();
   }, []);
+
+  const fetchSlips = async () => {
+    try {
+      const res = await fetch('/api/salary-slips/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setSlips(await res.json());
+      }
+    } catch (e) {
+      console.error('Failed to fetch slips', e);
+    }
+  };
 
   // Auto-logout on 15 minutes of inactivity
   useEffect(() => {
@@ -423,6 +438,9 @@ export default function WorkerDashboard() {
               <Button variant="ghost" size="icon" onClick={() => setView('history')}>
                 <History className="w-5 h-5" />
               </Button>
+              <Button variant="ghost" className="text-xs" onClick={() => setView('slips')}>
+                Slips
+              </Button>
               <Button variant="ghost" size="icon" onClick={() => setView('profile')}>
                 <UserIcon className="w-5 h-5" />
               </Button>
@@ -639,6 +657,50 @@ export default function WorkerDashboard() {
             </motion.div>
           )}
 
+          {view === 'slips' && (
+            <motion.div
+              key="slips"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="flex-1 flex flex-col"
+            >
+              <Card className="flex-1 flex flex-col max-h-[70vh]">
+                <CardHeader>
+                  <CardTitle>My Salary Slips</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 overflow-y-auto -mx-6 px-6">
+                  <div className="space-y-4">
+                    {slips.length === 0 && <p className="text-text-s text-center py-8 text-sm">No salary slips found.</p>}
+                    {slips.map((slip, i) => (
+                      <div key={slip._id || i} className="p-4 border border-card-border bg-bg/50 rounded-xl space-y-2">
+                        <div className="flex justify-between items-center border-b border-card-border pb-2">
+                          <h4 className="font-bold text-sm tracking-tight text-accent uppercase">{slip.period}</h4>
+                          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 bg-success/10 text-success rounded-full">
+                            {slip.status}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-1">
+                          <span className="text-xs text-text-s">Amount</span>
+                          <span className="text-sm font-bold font-mono">₹{slip.amount}</span>
+                        </div>
+                        {slip.notes && (
+                          <div className="pt-2 text-xs text-text-p leading-relaxed border-t border-card-border/50">
+                            <span className="text-text-s block mb-1">Notes:</span>
+                            {slip.notes}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-text-s text-right block pt-2 mt-2 border-t border-card-border/50">
+                          Issued: {format(new Date(slip.issuedAt), 'MMM d, yyyy')}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
           {view === 'main' && status === 'idle' && (
             <motion.div
               key="idle"
@@ -647,23 +709,26 @@ export default function WorkerDashboard() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="space-y-6"
             >
-              <div className="grid grid-cols-2 gap-4">
-                <Button
-                  size="lg"
-                  className="h-32 flex-col gap-3 bg-success/10 text-success hover:bg-success/20 border border-success/20"
-                  onClick={() => startCamera('clock-in')}
-                >
-                  <MapPin className="w-8 h-8" />
-                  <span>Clock In</span>
-                </Button>
-                <Button
-                  size="lg"
-                  className="h-32 flex-col gap-3 bg-warning/10 text-warning hover:bg-warning/20 border border-warning/20"
-                  onClick={() => startCamera('clock-out')}
-                >
-                  <LogOut className="w-8 h-8" />
-                  <span>Clock Out</span>
-                </Button>
+              <div className={`grid gap-4 ${(!history[0] || history[0].status !== 'clock-in') ? 'grid-cols-1' : 'grid-cols-1'}`}>
+                {(!history[0] || history[0].status !== 'clock-in') ? (
+                  <Button
+                    size="lg"
+                    className="h-32 flex-col gap-3 bg-success/10 text-success hover:bg-success/20 border border-success/20 w-full"
+                    onClick={() => startCamera('clock-in')}
+                  >
+                    <MapPin className="w-8 h-8" />
+                    <span>Clock In</span>
+                  </Button>
+                ) : (
+                  <Button
+                    size="lg"
+                    className="h-32 flex-col gap-3 bg-warning/10 text-warning hover:bg-warning/20 border border-warning/20 w-full"
+                    onClick={() => startCamera('clock-out')}
+                  >
+                    <LogOut className="w-8 h-8" />
+                    <span>Clock Out</span>
+                  </Button>
+                )}
               </div>
               
               {queue.length > 0 && (

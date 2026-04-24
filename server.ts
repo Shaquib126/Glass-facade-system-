@@ -119,6 +119,18 @@ const gallerySchema = new mongoose.Schema({
 });
 const Gallery = mongoose.model('Gallery', gallerySchema);
 
+const salarySlipSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  userEmail: String,
+  userName: String,
+  period: String, // e.g., 'April 2026'
+  amount: Number,
+  status: { type: String, default: 'Sent' },
+  notes: String,
+  issuedAt: { type: Date, default: Date.now }
+});
+const SalarySlip = mongoose.model('SalarySlip', salarySlipSchema);
+
 // Seed admin user
 async function seedAdmin() {
   try {
@@ -938,6 +950,45 @@ app.get('/api/attendance/me', authenticateToken, async (req: any, res: any) => {
     res.json(records);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Salary Slips Routes
+app.get('/api/salary-slips/me', authenticateToken, async (req: any, res: any) => {
+  try {
+    const slips = await SalarySlip.find({ userId: req.user.id }).sort({ issuedAt: -1 });
+    res.json(slips);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching salary slips' });
+  }
+});
+
+app.post('/api/salary-slips', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { userId, period, amount, notes } = req.body;
+    const userTarget = await User.findById(userId);
+    if (!userTarget) return res.status(404).json({ message: 'User not found' });
+    
+    const newSlip = await SalarySlip.create({
+      userId: userTarget._id,
+      userEmail: userTarget.email,
+      userName: userTarget.name,
+      period,
+      amount,
+      notes
+    });
+    
+    // Optionally create an alert for the user
+    await Alert.create({
+      userId: userTarget._id.toString(),
+      userEmail: userTarget.email,
+      message: `Your salary slip for ${period} has been issued.`,
+      type: 'info'
+    });
+
+    res.status(201).json(newSlip);
+  } catch (error) {
+    res.status(500).json({ message: 'Error generating salary slip' });
   }
 });
 

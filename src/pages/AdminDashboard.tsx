@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { format } from 'date-fns';
-import { Edit2, Trash2, X, LogOut, Filter, Download, Bell, AlertTriangle, Moon, Sun, CheckCircle } from 'lucide-react';
+import { Edit2, Trash2, X, LogOut, Filter, Download, Bell, AlertTriangle, Moon, Sun, CheckCircle, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const UserAutocomplete = ({ users, value, onChange }: { users: any[], value: string, onChange: (val: string) => void }) => {
@@ -81,6 +81,9 @@ export default function AdminDashboard() {
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '', ottHours: '' });
+
+  const [makingSalarySlipForUser, setMakingSalarySlipForUser] = useState<any>(null);
+  const [salarySlipForm, setSalarySlipForm] = useState({ period: '', amount: '', notes: '' });
 
   const [passwordResetUser, setPasswordResetUser] = useState<any>(null);
   const [adminNewPassword, setAdminNewPassword] = useState('');
@@ -293,6 +296,37 @@ export default function AdminDashboard() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleSendSalarySlip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/salary-slips', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          userId: makingSalarySlipForUser._id,
+          period: salarySlipForm.period,
+          amount: Number(salarySlipForm.amount),
+          notes: salarySlipForm.notes
+        })
+      });
+      if (res.ok) {
+        setShowNotificationToast({ message: 'Salary slip sent successfully!', show: true });
+        setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
+        setMakingSalarySlipForUser(null);
+        setSalarySlipForm({ period: '', amount: '', notes: '' });
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to send slip');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to send salary slip');
     }
   };
 
@@ -982,6 +1016,13 @@ export default function AdminDashboard() {
                                   <LogOut className="w-3.5 h-3.5" />
                                 </button>
                               )}
+                              <button 
+                                onClick={() => setMakingSalarySlipForUser(u)} 
+                                title="Send Salary Slip" 
+                                className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-success shadow-sm transition-colors"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                              </button>
                               <button onClick={() => setPasswordResetUser(u)} title="Reset Password" className="p-1.5 bg-bg border border-card-border rounded-lg text-text-s hover:text-warning shadow-sm transition-colors">
                                 <LogOut className="w-3.5 h-3.5" style={{transform: "rotate(-90deg)"}}/>
                               </button>
@@ -1033,6 +1074,61 @@ export default function AdminDashboard() {
                 </Button>
                 <Button type="submit" className="flex-1 bg-warning/20 hover:bg-warning/30 text-warning">
                   Reset Password
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Salary Slip Modal */}
+      {makingSalarySlipForUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-bg border border-card-border rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-card-border">
+              <h2 className="text-lg font-bold">Issue Salary Slip</h2>
+              <button onClick={() => setMakingSalarySlipForUser(null)} className="text-text-s hover:text-text-p">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSendSalarySlip} className="p-6 space-y-4">
+              <div className="space-y-2">
+                <p className="text-sm text-text-s mb-4">You are generating a salary slip for <strong className="text-text-p">{makingSalarySlipForUser.name}</strong>.</p>
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Period / Month</label>
+                <Input 
+                  type="text" 
+                  placeholder="e.g. April 2026"
+                  value={salarySlipForm.period} 
+                  onChange={e => setSalarySlipForm({...salarySlipForm, period: e.target.value})} 
+                  required 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Total Amount (₹)</label>
+                <Input 
+                  type="number" 
+                  step="any"
+                  placeholder="e.g. 15000"
+                  value={salarySlipForm.amount} 
+                  onChange={e => setSalarySlipForm({...salarySlipForm, amount: e.target.value})} 
+                  required 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Additional Notes (Optional)</label>
+                <Input 
+                  type="text" 
+                  placeholder="Performance bonus, deductions, etc."
+                  value={salarySlipForm.notes} 
+                  onChange={e => setSalarySlipForm({...salarySlipForm, notes: e.target.value})} 
+                />
+              </div>
+              <div className="pt-4 flex gap-3">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setMakingSalarySlipForUser(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1 bg-success/20 hover:bg-success/30 text-success">
+                  Send Slip
                 </Button>
               </div>
             </form>
