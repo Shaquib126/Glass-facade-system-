@@ -3,11 +3,77 @@ import { useAuthStore, useOfflineStore } from '../store';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
-import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload } from 'lucide-react';
+import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload, RotateCw, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
 import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
+import Cropper from 'react-easy-crop';
+
+export const getCroppedImg = async (imageSrc: string, pixelCrop: any, rotation = 0): Promise<string | null> => {
+  const image = new Image();
+  image.src = imageSrc;
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = reject;
+  });
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) return null;
+
+  const maxSize = Math.max(image.width, image.height);
+  const safeArea = 2 * ((maxSize / 2) * Math.sqrt(2));
+
+  canvas.width = safeArea;
+  canvas.height = safeArea;
+
+  ctx.translate(safeArea / 2, safeArea / 2);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.translate(-safeArea / 2, -safeArea / 2);
+
+  ctx.drawImage(
+    image,
+    safeArea / 2 - image.width / 2,
+    safeArea / 2 - image.height / 2
+  );
+
+  const data = ctx.getImageData(
+    safeArea / 2 - image.width / 2 + pixelCrop.x,
+    safeArea / 2 - image.height / 2 + pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height
+  );
+
+  const MAX_TARGET = 300;
+  let targetWidth = pixelCrop.width;
+  let targetHeight = pixelCrop.height;
+
+  if (targetWidth > targetHeight) {
+    if (targetWidth > MAX_TARGET) {
+      targetHeight *= MAX_TARGET / targetWidth;
+      targetWidth = MAX_TARGET;
+    }
+  } else {
+    if (targetHeight > MAX_TARGET) {
+      targetWidth *= MAX_TARGET / targetHeight;
+      targetHeight = MAX_TARGET;
+    }
+  }
+
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+  ctx.putImageData(data, 0, 0);
+
+  const finalCanvas = document.createElement('canvas');
+  finalCanvas.width = targetWidth;
+  finalCanvas.height = targetHeight;
+  const finalCtx = finalCanvas.getContext('2d');
+  finalCtx?.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+  return finalCanvas.toDataURL('image/jpeg', 0.82);
+};
 
 export default function WorkerDashboard() {
   const { user, token, logout, updateUser } = useAuthStore();
@@ -36,6 +102,12 @@ export default function WorkerDashboard() {
   
   const [enrollStatus, setEnrollStatus] = useState<'idle' | 'camera' | 'processing' | 'success' | 'error'>('idle');
   const [enrollMessage, setEnrollMessage] = useState('');
+  
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const toggleTheme = () => {
@@ -117,40 +189,28 @@ export default function WorkerDashboard() {
 
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 300;
-        const MAX_HEIGHT = 300;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
-          setEditPhoto(compressedBase64);
-        }
-      };
       if (ev.target?.result) {
-        img.src = ev.target.result as string;
+        setImageToCrop(ev.target.result as string);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+        setRotation(0);
       }
     };
     reader.readAsDataURL(file);
+    e.target.value = ''; // to allow selecting the same file again
+  };
+
+  const handleCropComplete = async () => {
+    try {
+      const croppedImageBase64 = await getCroppedImg(imageToCrop as string, croppedAreaPixels, rotation);
+      if (croppedImageBase64) {
+        setEditPhoto(croppedImageBase64);
+      }
+      setImageToCrop(null);
+    } catch (e) {
+      console.error(e);
+      setProfileError('Failed to crop image');
+    }
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -954,6 +1014,78 @@ export default function WorkerDashboard() {
           )}
         </AnimatePresence>
       </main>
+
+      {imageToCrop && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex flex-col">
+          <div className="relative flex-1 w-full bg-black">
+            <Cropper
+              image={imageToCrop}
+              crop={crop}
+              zoom={zoom}
+              rotation={rotation}
+              aspect={1}
+              cropShape="round"
+              showGrid={false}
+              onCropChange={setCrop}
+              onRotationChange={setRotation}
+              onZoomChange={setZoom}
+              onCropComplete={(_, croppedAreaPixels) => setCroppedAreaPixels(croppedAreaPixels)}
+            />
+          </div>
+          <div className="bg-card-bg sm:rounded-t-3xl p-6 border-t border-card-border space-y-6 shrink-0 h-auto w-full max-w-lg mx-auto shadow-2xl relative z-10 bottom-0">
+             <div className="flex flex-col gap-3">
+               <div className="flex items-center justify-between">
+                 <label className="text-xs text-text-s uppercase tracking-wider font-semibold flex items-center gap-2">
+                   <ZoomIn className="w-4 h-4" /> Zoom
+                 </label>
+                 <span className="text-xs font-mono bg-bg px-2 py-0.5 rounded text-text-p">{zoom.toFixed(1)}x</span>
+               </div>
+               <div className="flex items-center gap-3">
+                 <ZoomOut className="w-4 h-4 text-text-s cursor-pointer hover:text-accent disabled:opacity-50" onClick={() => setZoom(Math.max(1, zoom - 0.1))} />
+                 <input
+                   type="range"
+                   value={zoom}
+                   min={1}
+                   max={3}
+                   step={0.1}
+                   aria-labelledby="Zoom"
+                   onChange={(e) => setZoom(Number(e.target.value))}
+                   className="w-full h-2 bg-card-border rounded-lg appearance-none cursor-pointer accent-accent"
+                 />
+                 <ZoomIn className="w-4 h-4 text-text-s cursor-pointer hover:text-accent disabled:opacity-50" onClick={() => setZoom(Math.min(3, zoom + 0.1))} />
+               </div>
+             </div>
+
+             <div className="flex flex-col gap-3">
+               <div className="flex items-center justify-between">
+                 <label className="text-xs text-text-s uppercase tracking-wider font-semibold flex items-center gap-2">
+                   <RotateCw className="w-4 h-4" /> Rotation
+                 </label>
+                 <span className="text-xs font-mono bg-bg px-2 py-0.5 rounded text-text-p">{rotation}°</span>
+               </div>
+               <div className="flex items-center gap-3">
+                 <RotateCcw className="w-4 h-4 text-text-s cursor-pointer hover:text-accent" onClick={() => setRotation((r) => (r - 90 + 360) % 360)} />
+                 <input
+                   type="range"
+                   value={rotation}
+                   min={0}
+                   max={360}
+                   step={1}
+                   aria-labelledby="Rotation"
+                   onChange={(e) => setRotation(Number(e.target.value))}
+                   className="w-full h-2 bg-card-border rounded-lg appearance-none cursor-pointer accent-accent"
+                 />
+                 <RotateCw className="w-4 h-4 text-text-s cursor-pointer hover:text-accent" onClick={() => setRotation((r) => (r + 90) % 360)} />
+               </div>
+             </div>
+             
+             <div className="flex justify-between items-center gap-3 pt-4 border-t border-card-border">
+               <Button variant="outline" onClick={() => setImageToCrop(null)} className="flex-1 border-card-border hover:bg-bg">Cancel</Button>
+               <Button onClick={handleCropComplete} className="flex-1 bg-accent hover:bg-accent/90 text-white font-semibold">Apply Crop</Button>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
