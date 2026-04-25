@@ -63,6 +63,7 @@ const userSchema = new mongoose.Schema({
   dailyWage: { type: Number, default: 0 },
   ottHours: { type: Number, default: 0 },
   faceDescriptor: [Number],
+  profilePhoto: String,
   resetPasswordToken: String,
   resetPasswordExpires: Date,
   createdAt: { type: Date, default: Date.now }
@@ -273,6 +274,7 @@ app.post('/api/auth/login', async (req: any, res: any) => {
         email: user.email,
         role: user.role,
         name: user.name,
+        profilePhoto: user.profilePhoto,
         hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
       }
     });
@@ -314,6 +316,7 @@ app.post('/api/auth/login-face', async (req: any, res: any) => {
         email: user.email,
         role: user.role,
         name: user.name,
+        profilePhoto: user.profilePhoto,
         hasFaceDescriptor: true
       },
       distance
@@ -668,12 +671,13 @@ app.post('/api/users/me/descriptor', authenticateToken, async (req: any, res: an
 
 app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
   try {
-    const { name, currentPassword, newPassword } = req.body;
+    const { name, currentPassword, newPassword, profilePhoto } = req.body;
     const user: any = await User.findById(req.user.id);
     
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (name) user.name = name;
+    if (profilePhoto) user.profilePhoto = profilePhoto;
 
     if (newPassword) {
       if (!currentPassword) {
@@ -693,6 +697,7 @@ app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
       email: user.email,
       role: user.role,
       name: user.name,
+      profilePhoto: user.profilePhoto,
       hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
     });
   } catch (error) {

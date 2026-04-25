@@ -3,7 +3,7 @@ import { useAuthStore, useOfflineStore } from '../store';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
-import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun } from 'lucide-react';
+import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
 import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,6 +26,7 @@ export default function WorkerDashboard() {
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   
   const [editName, setEditName] = useState(user?.name || '');
+  const [editPhoto, setEditPhoto] = useState((user as any)?.profilePhoto || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -110,6 +111,48 @@ export default function WorkerDashboard() {
     }
   }, [view, user?.hasFaceDescriptor, enrollStatus]);
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 300;
+        const MAX_HEIGHT = 300;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          setEditPhoto(compressedBase64);
+        }
+      };
+      if (ev.target?.result) {
+        img.src = ev.target.result as string;
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileError('');
@@ -127,7 +170,7 @@ export default function WorkerDashboard() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: editName, currentPassword, newPassword })
+        body: JSON.stringify({ name: editName, currentPassword, newPassword, profilePhoto: editPhoto })
       });
       
       const data = await res.json();
@@ -422,11 +465,20 @@ export default function WorkerDashboard() {
   return (
     <div className="min-h-screen bg-bg text-text-p flex flex-col">
       <header className="p-6 flex justify-between items-center border-b border-card-border bg-card-bg backdrop-blur-md sticky top-0 z-50">
-        <div>
-          <h1 className="text-xl font-bold">Hello, {user?.name}</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-accent uppercase hover:opacity-80 transition-opacity">Glass Fab Systems</a>
-            <span className="text-text-s text-sm">• {new Date().toLocaleDateString()}</span>
+        <div className="flex items-center gap-4">
+          {(user as any)?.profilePhoto ? (
+            <img src={(user as any).profilePhoto} alt="Profile" className="w-12 h-12 rounded-full border border-card-border object-cover bg-bg" />
+          ) : (
+            <div className="w-12 h-12 rounded-full border border-card-border bg-bg flex items-center justify-center text-text-s">
+              <UserIcon className="w-6 h-6" />
+            </div>
+          )}
+          <div>
+            <h1 className="text-xl font-bold">Hello, {user?.name}</h1>
+            <div className="flex items-center gap-2 mt-1">
+              <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-accent uppercase hover:opacity-80 transition-opacity">Glass Fab Systems</a>
+              <span className="text-text-s text-sm">• {new Date().toLocaleDateString()}</span>
+            </div>
           </div>
         </div>
         <div className="flex gap-2">
@@ -522,6 +574,24 @@ export default function WorkerDashboard() {
                     {profileError && <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">{profileError}</div>}
                     {profileMessage && <div className="p-3 rounded-xl bg-success/10 border border-success/20 text-success text-sm text-center">{profileMessage}</div>}
                     
+                    <div className="space-y-4">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-card-border bg-card-bg shadow-sm">
+                           {editPhoto ? (
+                             <img src={editPhoto} alt="Profile" className="w-full h-full object-cover" />
+                           ) : (
+                             <div className="w-full h-full flex items-center justify-center text-text-s bg-bg">
+                               <Upload className="w-8 h-8 opacity-50" />
+                             </div>
+                           )}
+                        </div>
+                        <label className="cursor-pointer bg-accent/10 border border-accent/20 text-accent text-xs px-3 py-1.5 rounded uppercase font-semibold hover:bg-accent/20 transition-colors">
+                          Upload Photo
+                          <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                        </label>
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-text-s uppercase tracking-wider">Full Name</label>
                       <Input value={editName} onChange={e => setEditName(e.target.value)} required />
@@ -705,19 +775,85 @@ export default function WorkerDashboard() {
                           </div>
                           <button 
                             onClick={() => {
-                              const slipContent = `SALARY SLIP\n--------------------\nPeriod: ${slip.period}\nAmount: ₹${slip.amount}\nStatus: ${slip.status}\nIssued: ${format(new Date(slip.issuedAt), 'MMM d, yyyy')}\n${slip.notes ? `\nNotes: ${slip.notes}` : ''}`;
-                              const blob = new Blob([slipContent], { type: 'text/plain' });
+                              const rows = [];
+                              rows.push(['SALARY SLIP REPORT']);
+                              rows.push(['Period', slip.period]);
+                              rows.push(['Amount (Rs)', slip.amount]);
+                              rows.push(['Status', slip.status]);
+                              rows.push(['Issued At', format(new Date(slip.issuedAt), 'MMM d, yyyy')]);
+                              if (slip.notes) rows.push(['Notes', slip.notes]);
+                              
+                              rows.push([]);
+                              rows.push(['ATTENDANCE LOGS FOR WORKER']);
+                              rows.push(['Month', 'Date', 'Clock In', 'Clock Out', 'Total Hours', 'Daily Wage', 'OTT Allowance (Hours)']);
+                              
+                              // Group history by date
+                              const grouped: Record<string, { month: string, date: string, clockIn: string, clockOut: string, hours: number, timestamp: number }> = {};
+                              history.forEach(record => {
+                                const d = new Date(record.timestamp);
+                                const dateKey = d.toLocaleDateString();
+                                if (!grouped[dateKey]) {
+                                  grouped[dateKey] = {
+                                    month: format(d, 'MMMM yyyy'),
+                                    date: format(d, 'MMM d, yyyy'),
+                                    clockIn: '-',
+                                    clockOut: '-',
+                                    hours: 0,
+                                    timestamp: d.getTime()
+                                  };
+                                }
+                                if (record.status === 'clock-in') {
+                                  grouped[dateKey].clockIn = format(d, 'hh:mm a');
+                                } else if (record.status === 'clock-out') {
+                                  grouped[dateKey].clockOut = format(d, 'hh:mm a');
+                                  if (record.workedHours) {
+                                    grouped[dateKey].hours += record.workedHours;
+                                  }
+                                }
+                              });
+                              
+                              // Filter logs by the period string (basic text match) or fallback to recent 30 days of the slip issue
+                              let filteredDates = Object.keys(grouped).filter(dateKey => {
+                                const itemMonth = grouped[dateKey].month.toLowerCase();
+                                const slipPeriod = slip.period.toLowerCase();
+                                // check if the month or year appears in the slip period string
+                                const words = slipPeriod.split(/[\s,-/]+/);
+                                return words.some(w => w.length >= 3 && itemMonth.includes(w));
+                              });
+                              
+                              // If no logs match the period name directly, just include all logs (user can filter in excel)
+                              if (filteredDates.length === 0) {
+                                filteredDates = Object.keys(grouped);
+                              }
+
+                              const sortedDates = filteredDates.sort((a, b) => grouped[b].timestamp - grouped[a].timestamp);
+
+                              sortedDates.forEach(dateKey => {
+                                const data = grouped[dateKey];
+                                rows.push([
+                                  data.month,
+                                  data.date,
+                                  data.clockIn,
+                                  data.clockOut,
+                                  data.hours > 0 ? data.hours.toFixed(2) : '0',
+                                  (user as any)?.dailyWage || 0,
+                                  (user as any)?.ottHours || 0
+                                ]);
+                              });
+
+                              const csvContent = rows.map(r => r.join(',')).join('\n');
+                              const blob = new Blob([csvContent], { type: 'text/csv' });
                               const url = window.URL.createObjectURL(blob);
                               const a = document.createElement('a');
                               a.href = url;
-                              a.download = `Salary_Slip_${slip.period.replace(/ /g, '_')}.txt`;
+                              a.download = `Salary_Slip_${slip.period.replace(/ /g, '_')}.csv`;
                               document.body.appendChild(a);
                               a.click();
                               window.URL.revokeObjectURL(url);
                             }}
                             className="bg-accent/10 border border-accent/20 text-accent text-[10px] px-3 py-1 font-semibold rounded hover:bg-accent/20 transition-colors uppercase"
                           >
-                            Download
+                            Download CSV
                           </button>
                         </div>
                       </div>

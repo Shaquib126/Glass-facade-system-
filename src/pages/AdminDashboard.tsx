@@ -1031,22 +1031,31 @@ export default function AdminDashboard() {
                 <CardContent className="flex-1 overflow-y-auto px-0 py-0">
                   <div className="space-y-0">
                     {users.map((u) => (
-                      <div key={u._id} className="flex items-center justify-between px-6 py-4 border-b border-card-border last:border-0 group hover:bg-card-border/10 transition-colors">
-                        <div className="cursor-pointer" onClick={() => { setSelectedUser(u); setSelectedUserTab('overview'); }}>
-                          <p className="font-semibold text-[14px] flex items-center gap-2 hover:text-accent transition-colors">
-                            {u.name}
-                            <span className="text-[9px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-1.5 py-0.5 rounded font-mono">
-                              {u.role}
-                            </span>
-                          </p>
-                          <p className="text-[11px] text-text-s mt-0.5">{u.email}</p>
-                          <div className="flex gap-2">
-                            {u.dailyWage > 0 && <p className="text-[10px] text-success/80 mt-1 font-mono">₹{u.dailyWage}/day</p>}
-                            {u.ottHours > 0 && <p className="text-[10px] text-accent mt-1 font-mono">{u.ottHours}h OTT Allow</p>}
+                      <div key={u._id} className="flex items-center justify-between px-6 py-4 border-b border-card-border last:border-0 group hover:bg-card-border/10 transition-colors cursor-pointer" onClick={() => { setSelectedUser(u); setSelectedUserTab('overview'); }}>
+                        <div className="flex items-center gap-3">
+                          {u.profilePhoto ? (
+                            <img src={u.profilePhoto} alt={u.name} className="w-10 h-10 rounded-full border border-card-border bg-bg object-cover" />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full border border-card-border bg-bg flex items-center justify-center text-text-s font-bold">
+                              {u.name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div>
+                            <p className="font-semibold text-[14px] flex items-center gap-2 group-hover:text-accent transition-colors">
+                              {u.name}
+                              <span className="text-[9px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-1.5 py-0.5 rounded font-mono">
+                                {u.role}
+                              </span>
+                            </p>
+                            <p className="text-[11px] text-text-s mt-0.5">{u.email}</p>
+                            <div className="flex gap-2 mt-1">
+                              {u.dailyWage > 0 && <span className="text-[10px] text-success/80 font-mono">₹{u.dailyWage}/day</span>}
+                              {u.ottHours > 0 && <span className="text-[10px] text-accent font-mono">{u.ottHours}h OTT</span>}
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center">
-                          <button onClick={() => { setSelectedUser(u); setSelectedUserTab('overview'); }} className="p-1.5 text-text-s hover:text-accent transition-colors bg-bg border border-card-border rounded-lg shadow-sm">
+                          <button onClick={(e) => { e.stopPropagation(); setSelectedUser(u); setSelectedUserTab('overview'); }} className="p-1.5 text-text-s hover:text-accent transition-colors bg-bg border border-card-border rounded-lg shadow-sm font-semibold text-xs px-3">
                             View Details
                           </button>
                         </div>
@@ -1201,17 +1210,24 @@ export default function AdminDashboard() {
 
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
               {/* Profile Header */}
-              <div className="flex items-start justify-between border border-card-border bg-card-bg p-4 rounded-xl">
-                <div>
+              <div className="flex items-start gap-4 border border-card-border bg-card-bg p-4 rounded-xl">
+                 {selectedUser.profilePhoto ? (
+                   <img src={selectedUser.profilePhoto} alt={selectedUser.name} className="w-16 h-16 rounded-full border border-card-border object-cover bg-bg flex-shrink-0" />
+                 ) : (
+                   <div className="w-16 h-16 rounded-full border border-card-border bg-bg flex items-center justify-center text-text-s font-bold text-2xl flex-shrink-0">
+                     {selectedUser.name.charAt(0).toUpperCase()}
+                   </div>
+                 )}
+                <div className="flex-1 min-w-0">
                   <h3 className="text-lg font-bold truncate flex items-center gap-2">
                     {selectedUser.name}
                     <span className="text-[10px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-2 py-0.5 rounded font-mono">
                       {selectedUser.role}
                     </span>
                   </h3>
-                  <p className="text-sm text-text-s mt-1">{selectedUser.email}</p>
+                  <p className="text-sm text-text-s mt-1 truncate">{selectedUser.email}</p>
                   
-                  <div className="flex gap-3 mt-3">
+                  <div className="flex flex-wrap gap-3 mt-3">
                     <div className="bg-bg border border-card-border px-3 py-1.5 rounded-lg">
                       <p className="text-[10px] text-text-s uppercase tracking-wider mb-0.5">Daily Wage</p>
                       <p className="text-sm font-semibold font-mono">₹{selectedUser.dailyWage || 0}</p>
