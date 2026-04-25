@@ -132,7 +132,12 @@ export default function WorkerDashboard() {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setSlips(await res.json());
+        const text = await res.text();
+        try {
+          setSlips(JSON.parse(text));
+        } catch (e) {
+          console.error("Failed to parse fetching slips", e, text);
+        }
       }
     } catch (e) {
       console.error('Failed to fetch slips', e);
@@ -233,7 +238,18 @@ export default function WorkerDashboard() {
         body: JSON.stringify({ name: editName, currentPassword, newPassword, profilePhoto: editPhoto })
       });
       
-      const data = await res.json();
+      if (res.status === 401 || res.status === 403) {
+        logout();
+        return;
+      }
+      
+      let data;
+      const text = await res.text();
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error(text || res.statusText);
+      }
       if (!res.ok) throw new Error(data.message || 'Failed to update profile');
       
       updateUser(data);
@@ -292,6 +308,10 @@ export default function WorkerDashboard() {
       const res = await fetch('/api/attendance/me', {
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (res.status === 401 || res.status === 403) {
+        logout();
+        return;
+      }
       if (res.ok) {
         setHistory(await res.json());
       }

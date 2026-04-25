@@ -170,6 +170,12 @@ export default function AdminDashboard() {
         fetch('/api/feedback', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/gallery', { headers: { Authorization: `Bearer ${token}` } })
       ]);
+      
+      if ([usersRes, attRes, sitesRes].some(res => res.status === 401 || res.status === 403)) {
+        logout();
+        return;
+      }
+      
       if (usersRes.ok) setUsers(await usersRes.json());
       if (attRes.ok) setAttendance(await attRes.json());
       if (sitesRes.ok) setSites(await sitesRes.json());

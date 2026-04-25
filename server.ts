@@ -179,27 +179,27 @@ const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (token == null) return res.sendStatus(401);
+  if (token == null) return res.status(401).json({ message: 'Unauthorized' });
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) return res.sendStatus(403);
+    if (err) return res.status(403).json({ message: 'Forbidden' });
     req.user = user;
     next();
   });
 };
 
 const requireAdmin = (req: any, res: any, next: any) => {
-  if (req.user.role !== 'admin') return res.sendStatus(403);
+  if (req.user.role !== 'admin') return res.status(403).json({ message: 'Admin role required' });
   next();
 };
 
 const requireAdminOrManager = (req: any, res: any, next: any) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'manager') return res.sendStatus(403);
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') return res.status(403).json({ message: 'Admin or Manager role required' });
   next();
 };
 
 const requireDashboardAccess = (req: any, res: any, next: any) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'manager' && req.user.role !== 'supervisor') return res.sendStatus(403);
+  if (req.user.role !== 'admin' && req.user.role !== 'manager' && req.user.role !== 'supervisor') return res.status(403).json({ message: 'Dashboard access required' });
   next();
 };
 
