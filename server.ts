@@ -26,7 +26,16 @@ const io = new Server(httpServer, {
 
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-glass-facade';
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/glass-facade';
+
+// Fix MONGODB_URI if user forgot the exact prefix
+let MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/glass-facade';
+if (!MONGODB_URI.startsWith('mongodb://') && !MONGODB_URI.startsWith('mongodb+srv://') && !MONGODB_URI.startsWith('localhost')) {
+  if (MONGODB_URI.includes(',') && MONGODB_URI.includes('replicaSet=')) {
+    MONGODB_URI = 'mongodb://' + MONGODB_URI;
+  } else {
+    MONGODB_URI = 'mongodb+srv://' + MONGODB_URI;
+  }
+}
 
 let transporter: any = null;
 const getTransporter = () => {
@@ -34,15 +43,15 @@ const getTransporter = () => {
     const config: any = {
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true',
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
-      socketTimeout: 5000
+      secure: process.env.SMTP_SECURE === 'true' || Number(process.env.SMTP_PORT) === 465,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000
     };
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       config.auth = {
         user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        pass: process.env.SMTP_PASS.replace(/\s+/g, ''), // strip spaces from App Password
       };
     }
     transporter = nodemailer.createTransport(config);
@@ -343,6 +352,31 @@ app.post('/api/auth/login-face', async (req: any, res: any) => {
   }
 });
 
+app.get('/api/test/email', async (req: any, res: any) => {
+  try {
+    const config: any = {
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === 'true',
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 5000,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      }
+    };
+    
+    // Test auth directly first to get the error
+    res.json({
+       emailUser: process.env.SMTP_USER ? 'set' : 'not set', 
+       emailPass: process.env.SMTP_PASS ? 'set' : 'not set'
+    });
+  } catch (err: any) {
+    res.json({ error: err.message, stack: err.stack, full: err });
+  }
+});
+
 app.post('/api/auth/forgot-password', async (req: any, res: any) => {
   try {
     if (mongoose.connection.readyState !== 1) {
@@ -383,6 +417,7 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
       } catch (emailErr) {
         console.error('Failed to send reset email via Nodemailer:', emailErr);
         emailStatus = 'failed';
+        (req as any).emailError = emailErr instanceof Error ? emailErr.message : String(emailErr);
       }
     } else {
       console.log('NOTE: SMTP_USER or SMTP_PASS environments missing. Nodemailer skipping real email sending.');
@@ -390,7 +425,7 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
 
     res.json({ 
       message: emailStatus === 'failed' 
-        ? 'Failed to send email. Please check your SMTP configuration in Settings.' 
+        ? `Failed to send email: ${(req as any).emailError}. Please check your SMTP configuration.` 
         : 'If that email is in our system, we have sent a password reset link.',
       emailStatus,
       resetUrl: emailStatus !== 'sent' ? resetUrl : undefined, // Provide fallback for testing
@@ -907,6 +942,10 @@ app.get('/api/attendance', authenticateToken, requireDashboardAccess, async (req
 cron.schedule('0 18 * * *', async () => {
   try {
     console.log('Running scheduled task: Auto Clock-Out at 6 PM');
+    if (mongoose.connection.readyState !== 1) {
+      console.log('Skipping auto clock-out: Database not connected.');
+      return;
+    }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
