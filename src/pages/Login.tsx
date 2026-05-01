@@ -13,7 +13,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'camera' | 'processing' | 'forgot-password'>('idle');
-  const [resetMessage, setResetMessage] = useState('');
+  const [resetMessage, setResetMessage] = useState<React.ReactNode>('');
   const setAuth = useAuthStore((state) => state.setAuth);
   
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -66,7 +66,18 @@ export default function Login() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to send reset link');
-      setResetMessage(data.message);
+      
+      let msg: React.ReactNode = data.message;
+      if (data.resetUrl) {
+         msg = (
+           <div className="flex flex-col gap-2 relative z-50 pointer-events-auto">
+             <p>{data.message}</p>
+             <p className="text-xs font-semibold text-accent mt-2">Email bypassed/failed.</p>
+             <a href={data.resetUrl} className="underline text-blue-500 hover:text-blue-600 block break-all mt-1" target="_blank" rel="noopener noreferrer">Click here to reset your password directly</a>
+           </div>
+         );
+      }
+      setResetMessage(msg);
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -35,6 +35,9 @@ const getTransporter = () => {
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: Number(process.env.SMTP_PORT) || 587,
       secure: process.env.SMTP_SECURE === 'true',
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 5000
     };
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       config.auth = {
@@ -361,9 +364,11 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
 
     // In a real application, send this via email (e.g., using SendGrid, Nodemailer)
     // For this environment, we'll log it and return it for testing purposes
-    const resetUrl = `http://${req.headers.host}/reset-password?token=${token}`;
+    const protocol = req.headers.host.includes('localhost') ? 'http' : 'https';
+    const resetUrl = `${protocol}://${req.headers.host}/reset-password?token=${token}`;
     console.log(`\n=== PASSWORD RESET LINK ===\nFor user: ${email}\nLink: ${resetUrl}\n===========================\n`);
 
+    let emailStatus = 'skipped';
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
         await getTransporter().sendMail({
@@ -374,15 +379,21 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
           html: `<p>Please click the link below to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you did not request this, please ignore this email.</p>`
         });
         console.log(`Password reset email sent to ${user.email}`);
+        emailStatus = 'sent';
       } catch (emailErr) {
         console.error('Failed to send reset email via Nodemailer:', emailErr);
+        emailStatus = 'failed';
       }
     } else {
       console.log('NOTE: SMTP_USER or SMTP_PASS environments missing. Nodemailer skipping real email sending.');
     }
 
     res.json({ 
-      message: 'If that email is in our system, we have sent a password reset link.',
+      message: emailStatus === 'failed' 
+        ? 'Failed to send email. Please check your SMTP configuration in Settings.' 
+        : 'If that email is in our system, we have sent a password reset link.',
+      emailStatus,
+      resetUrl: emailStatus !== 'sent' ? resetUrl : undefined, // Provide fallback for testing
       _dev_token: token // Included for testing in AI Studio without real email
     });
   } catch (error) {

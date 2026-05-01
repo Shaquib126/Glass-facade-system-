@@ -12,10 +12,10 @@ import Cropper from 'react-easy-crop';
 
 export const getCroppedImg = async (imageSrc: string, pixelCrop: any, rotation = 0): Promise<string | null> => {
   const image = new Image();
-  image.src = imageSrc;
   await new Promise((resolve, reject) => {
     image.onload = resolve;
     image.onerror = reject;
+    image.src = imageSrc;
   });
 
   const canvas = document.createElement('canvas');
@@ -211,6 +211,26 @@ export default function WorkerDashboard() {
       const croppedImageBase64 = await getCroppedImg(imageToCrop as string, croppedAreaPixels, rotation);
       if (croppedImageBase64) {
         setEditPhoto(croppedImageBase64);
+        
+        // Automatically save the cropped photo
+        const res = await fetch('/api/users/me', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ profilePhoto: croppedImageBase64 })
+        });
+        
+        if (res.ok) {
+           let data;
+           const text = await res.text();
+           try { data = JSON.parse(text); } catch (e) { data = null; }
+           if (data) updateUser(data);
+           setProfileMessage('Profile photo updated successfully');
+        } else {
+           setProfileError('Failed to save profile photo');
+        }
       }
       setImageToCrop(null);
     } catch (e) {
