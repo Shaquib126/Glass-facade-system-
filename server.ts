@@ -28,15 +28,24 @@ const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-glass-facade';
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/glass-facade';
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: Number(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+let transporter: any = null;
+const getTransporter = () => {
+  if (!transporter) {
+    const config: any = {
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT) || 587,
+      secure: process.env.SMTP_SECURE === 'true',
+    };
+    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+      config.auth = {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      };
+    }
+    transporter = nodemailer.createTransport(config);
+  }
+  return transporter;
+};
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -352,7 +361,7 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
 
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        await transporter.sendMail({
+        await getTransporter().sendMail({
           from: `"Glass Facade System" <${process.env.SMTP_USER}>`,
           to: user.email,
           subject: 'Password Reset - Glass Facade',
@@ -1051,7 +1060,7 @@ app.post('/api/salary-slips', authenticateToken, requireAdminOrManager, async (r
     // Try sending an email
     if (process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
-        await transporter.sendMail({
+        await getTransporter().sendMail({
           from: `"Attendance App" <${process.env.SMTP_USER}>`,
           to: userTarget.email,
           subject: `Your Salary Slip for ${period}`,
