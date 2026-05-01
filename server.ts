@@ -61,12 +61,17 @@ mongoose.connect(MONGODB_URI)
   })
   .catch(err => {
     console.error('MongoDB connection error:', err);
-    dbConnectionError = err.message || String(err);
+    if (err.message && err.message.includes('bad auth')) {
+      dbConnectionError = 'Authentication failed. Please check your username and password in the MONGODB_URI secret in Settings (the part between mongodb+srv:// and @).';
+    } else {
+      dbConnectionError = err.message || String(err);
+    }
   });
 
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  mobile: { type: String, required: false },
   role: { type: String, default: 'user' },
   name: String,
   dailyWage: { type: Number, default: 0 },
@@ -418,7 +423,7 @@ app.post('/api/auth/reset-password', async (req: any, res: any) => {
 
 app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const { email, password, name, role, faceDescriptor, dailyWage, ottHours } = req.body;
+    const { email, password, name, role, faceDescriptor, dailyWage, ottHours, mobile } = req.body;
     
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -431,6 +436,7 @@ app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any,
       email,
       password: hashedPassword,
       name,
+      mobile,
       role: role || 'user',
       dailyWage: dailyWage || 0,
       ottHours: ottHours || 0,
@@ -588,10 +594,10 @@ app.get('/api/reports/salary', authenticateToken, requireAdminOrManager, async (
 
 app.put('/api/users/:id', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const { name, email, role, dailyWage, ottHours } = req.body;
+    const { name, email, role, dailyWage, ottHours, mobile } = req.body;
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
-      { name, email, role, dailyWage, ottHours },
+      { name, email, role, dailyWage, ottHours, mobile },
       { new: true, select: '-password' }
     );
     if (!updatedUser) {
@@ -680,13 +686,14 @@ app.post('/api/users/me/descriptor', authenticateToken, async (req: any, res: an
 
 app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
   try {
-    const { name, currentPassword, newPassword, profilePhoto } = req.body;
+    const { name, currentPassword, newPassword, profilePhoto, mobile } = req.body;
     const user: any = await User.findById(req.user.id);
     
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (name) user.name = name;
     if (profilePhoto) user.profilePhoto = profilePhoto;
+    if (mobile !== undefined) user.mobile = mobile;
 
     if (newPassword) {
       if (!currentPassword) {
@@ -1077,6 +1084,79 @@ app.post('/api/salary-slips', authenticateToken, requireAdminOrManager, async (r
     res.status(201).json(newSlip);
   } catch (error) {
     res.status(500).json({ message: 'Error generating salary slip' });
+  }
+});
+
+app.post('/api/salary-slips/send-all', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { period, month, notes } = req.body;
+    // month is "YYYY-MM"
+    if (!month || !period) return res.status(400).json({ message: 'Missing period or month parameter' });
+    
+    let startDate = new Date(`${month}-01T00:00:00.000Z`);
+    let endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const users = await User.find({ role: { $ne: 'admin' } }, { password: 0 });
+    const attendance = await Attendance.find({
+      timestamp: { $gte: startDate.toISOString(), $lte: endDate.toISOString() },
+      status: 'clock-in'
+    });
+
+    const userStats: Record<string, Set<string>> = {};
+    attendance.forEach(record => {
+      const uId = (record as any).userId;
+      if (!userStats[uId]) userStats[uId] = new Set();
+      const dateStr = new Date(record.timestamp).toISOString().split('T')[0];
+      userStats[uId].add(dateStr);
+    });
+
+    const sentSlips = [];
+    for (const u of users) {
+      const uId = u._id.toString();
+      const daysWorked = userStats[uId] ? userStats[uId].size : 0;
+      const wage = u.dailyWage || 0;
+      const amount = daysWorked * wage;
+      
+      if (amount <= 0 && daysWorked === 0) continue; // skip users who didn't work
+
+      const newSlip = await SalarySlip.create({
+        userId: u._id,
+        userEmail: u.email,
+        userName: u.name,
+        period,
+        amount,
+        notes
+      });
+      sentSlips.push(newSlip);
+
+      await Alert.create({
+        userId: u._id.toString(),
+        userEmail: u.email,
+        message: `Your salary slip for ${period} has been issued. Amount: ₹${amount}`,
+        type: 'info'
+      });
+
+      if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+        try {
+          await getTransporter().sendMail({
+            from: `"Glass Facade System" <${process.env.SMTP_USER}>`,
+            to: u.email,
+            subject: `Your Salary Slip for ${period}`,
+            text: `Hello ${u.name},\n\nYour salary slip for ${period} has been issued.\nTotal Amount: ₹${amount}\nDays Worked: ${daysWorked}\n\nNotes: ${notes || 'N/A'}\n\nPlease check your Dashboard.\n\nThank you!`
+          });
+        } catch (emailError) {}
+      }
+      
+      // If mobile number exists, you would integrate Twilio here
+      if (u.mobile) {
+         console.log(`Sending SMS to ${u.mobile} for ${u.name}: Salary ₹${amount}`);
+      }
+    }
+
+    res.status(201).json({ message: `Generated ${sentSlips.length} salary slips`, count: sentSlips.length });
+  } catch (error) {
+    console.error('Error generating bulk salary slips:', error);
+    res.status(500).json({ message: 'Error generating bulk salary slips' });
   }
 });
 

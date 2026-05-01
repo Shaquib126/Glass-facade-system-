@@ -89,6 +89,7 @@ export default function AdminDashboard() {
   }, [attendance]);
 
   const [newEmail, setNewEmail] = useState('');
+  const [newMobile, setNewMobile] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState('user');
@@ -96,7 +97,7 @@ export default function AdminDashboard() {
   const [newOttHours, setNewOttHours] = useState('');
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '', ottHours: '' });
+  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '', ottHours: '', mobile: '' });
 
   const [makingSalarySlipForUser, setMakingSalarySlipForUser] = useState<any>(null);
   const [salarySlipForm, setSalarySlipForm] = useState({ period: '', amount: '', notes: '' });
@@ -324,21 +325,44 @@ export default function AdminDashboard() {
   const handleSendSalarySlip = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/salary-slips', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          userId: makingSalarySlipForUser._id,
-          period: salarySlipForm.period,
-          amount: Number(salarySlipForm.amount),
-          notes: salarySlipForm.notes
-        })
-      });
+      let res;
+      if (makingSalarySlipForUser.isBulk) {
+        // Assume period implies the month for now, e.g., "YYYY-MM" if they type format correctly or we pass month
+        // Let's pass period as the month for bulk, or user enters "YYYY-MM" in period field?
+        // Let's inform the user to use 'YYYY-MM' format or we just use current month if period isn't matching format
+        const match = salarySlipForm.period.match(/\d{4}-\d{2}/);
+        const monthParam = match ? match[0] : new Date().toISOString().substring(0, 7);
+        res = await fetch('/api/salary-slips/send-all', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            period: salarySlipForm.period,
+            month: monthParam,
+            notes: salarySlipForm.notes
+          })
+        });
+      } else {
+        res = await fetch('/api/salary-slips', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            userId: makingSalarySlipForUser._id,
+            period: salarySlipForm.period,
+            amount: Number(salarySlipForm.amount),
+            notes: salarySlipForm.notes
+          })
+        });
+      }
       if (res.ok) {
-        setShowNotificationToast({ message: 'Salary slip issued! Workers can view/download it in their dashboard. Email sent if SMTP is configured.', show: true });
+        const data = await res.json();
+        const msg = makingSalarySlipForUser.isBulk ? `Bulk: Generated ${data.count} slips.` : 'Salary slip issued!';
+        setShowNotificationToast({ message: `${msg} Email sent if SMTP configured.`, show: true });
         setTimeout(() => setShowNotificationToast({ message: '', show: false }), 4000);
         setMakingSalarySlipForUser(null);
         setSalarySlipForm({ period: '', amount: '', notes: '' });
@@ -358,6 +382,7 @@ export default function AdminDashboard() {
     try {
       const payload = { 
         email: newEmail, 
+        mobile: newMobile,
         password: newPassword, 
         name: newName, 
         role: newRole, 
@@ -464,6 +489,7 @@ export default function AdminDashboard() {
     setEditForm({ 
       name: user.name || '', 
       email: user.email || '', 
+      mobile: user.mobile || '',
       role: user.role || 'user',
       dailyWage: user.dailyWage !== undefined ? String(user.dailyWage) : '0',
       ottHours: user.ottHours !== undefined ? String(user.ottHours) : '0' 
@@ -978,6 +1004,13 @@ export default function AdminDashboard() {
                         required 
                         className="h-10 text-xs bg-bg"
                       />
+                      <Input 
+                        type="tel" 
+                        placeholder="Mobile Number (Optional)" 
+                        value={newMobile} 
+                        onChange={e => setNewMobile(e.target.value)} 
+                        className="h-10 text-xs bg-bg"
+                      />
                       <div className="grid grid-cols-2 gap-3">
                         <Input 
                           type="password" 
@@ -1029,9 +1062,14 @@ export default function AdminDashboard() {
                 <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-card-border/50">
                   <CardTitle>Personnel Registry</CardTitle>
                   {(user?.role === 'admin' || user?.role === 'manager') && (
-                    <Button variant="outline" size="sm" onClick={downloadSalaryReport} className="h-8 px-3 text-[10px] text-text-p hover:text-accent hover:border-accent/50 shadow-sm" title="Download Salary CSV">
-                      <Download className="w-3.5 h-3.5 mr-1.5" /> EXPORT
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setMakingSalarySlipForUser({ name: 'All Workers', isBulk: true })} className="h-8 px-3 text-[10px] text-accent hover:bg-accent/10 border-accent/30 shadow-sm" title="Issue Salary Slips to All">
+                        <FileText className="w-3.5 h-3.5 mr-1.5" /> BULK ISSUE
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={downloadSalaryReport} className="h-8 px-3 text-[10px] text-text-p hover:text-accent hover:border-accent/50 shadow-sm" title="Download Salary CSV">
+                        <Download className="w-3.5 h-3.5 mr-1.5" /> EXPORT
+                      </Button>
+                    </div>
                   )}
                 </CardHeader>
                 <CardContent className="flex-1 overflow-y-auto px-0 py-0">
@@ -1149,26 +1187,33 @@ export default function AdminDashboard() {
             <form onSubmit={handleSendSalarySlip} className="p-6 space-y-4">
               <div className="space-y-2">
                 <p className="text-sm text-text-s mb-4">You are generating a salary slip for <strong className="text-text-p">{makingSalarySlipForUser.name}</strong>.</p>
+                {makingSalarySlipForUser.isBulk && (
+                  <p className="text-xs text-accent bg-accent/10 p-2 rounded">
+                    Amounts will be calculated automatically based on days worked and daily wage in the given month. For best results, use YYYY-MM format like '2026-04'.
+                  </p>
+                )}
                 <label className="text-xs font-medium text-text-s uppercase tracking-wider">Period / Month</label>
                 <Input 
                   type="text" 
-                  placeholder="e.g. April 2026"
+                  placeholder={makingSalarySlipForUser.isBulk ? "e.g. 2026-04" : "e.g. April 2026"}
                   value={salarySlipForm.period} 
                   onChange={e => setSalarySlipForm({...salarySlipForm, period: e.target.value})} 
                   required 
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Total Amount (₹)</label>
-                <Input 
-                  type="number" 
-                  step="any"
-                  placeholder="e.g. 15000"
-                  value={salarySlipForm.amount} 
-                  onChange={e => setSalarySlipForm({...salarySlipForm, amount: e.target.value})} 
-                  required 
-                />
-              </div>
+              {!makingSalarySlipForUser.isBulk && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-text-s uppercase tracking-wider">Total Amount (₹)</label>
+                  <Input 
+                    type="number" 
+                    step="any"
+                    placeholder="e.g. 15000"
+                    value={salarySlipForm.amount} 
+                    onChange={e => setSalarySlipForm({...salarySlipForm, amount: e.target.value})} 
+                    required={!makingSalarySlipForUser.isBulk}
+                  />
+                </div>
+              )}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-text-s uppercase tracking-wider">Additional Notes (Optional)</label>
                 <Input 
@@ -1389,6 +1434,14 @@ export default function AdminDashboard() {
                   value={editForm.email} 
                   onChange={e => setEditForm({...editForm, email: e.target.value})} 
                   required 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Mobile Number (Optional)</label>
+                <Input 
+                  type="tel" 
+                  value={editForm.mobile} 
+                  onChange={e => setEditForm({...editForm, mobile: e.target.value})} 
                 />
               </div>
               <div className="space-y-2">

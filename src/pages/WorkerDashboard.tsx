@@ -92,6 +92,7 @@ export default function WorkerDashboard() {
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   
   const [editName, setEditName] = useState(user?.name || '');
+  const [editMobile, setEditMobile] = useState((user as any)?.mobile || '');
   const [editPhoto, setEditPhoto] = useState((user as any)?.profilePhoto || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -235,7 +236,7 @@ export default function WorkerDashboard() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: editName, currentPassword, newPassword, profilePhoto: editPhoto })
+        body: JSON.stringify({ name: editName, mobile: editMobile, currentPassword, newPassword, profilePhoto: editPhoto })
       });
       
       if (res.status === 401 || res.status === 403) {
@@ -675,6 +676,11 @@ export default function WorkerDashboard() {
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-text-s uppercase tracking-wider">Full Name</label>
                       <Input value={editName} onChange={e => setEditName(e.target.value)} required />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-text-s uppercase tracking-wider">Mobile Number (Optional)</label>
+                      <Input value={editMobile} onChange={e => setEditMobile(e.target.value)} type="tel" />
                     </div>
 
                     <div className="pt-4 border-t border-card-border">
