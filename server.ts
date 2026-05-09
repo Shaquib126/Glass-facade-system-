@@ -177,9 +177,10 @@ const SalarySlip = mongoose.model('SalarySlip', salarySlipSchema);
 // Seed admin user
 async function seedAdmin() {
   try {
-    const adminExists = await User.findOne({ role: 'admin' });
-    if (!adminExists) {
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+    let admin = await User.findOne({ role: 'admin' });
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    
+    if (!admin) {
       await User.create({
         email: 'adminglassfacade@gmail.com',
         password: hashedPassword,
@@ -187,6 +188,11 @@ async function seedAdmin() {
         name: 'Admin User'
       });
       console.log('Admin user seeded: adminglassfacade@gmail.com / admin123');
+    } else {
+      admin.email = 'adminglassfacade@gmail.com';
+      admin.password = hashedPassword;
+      await admin.save();
+      console.log('Admin user updated: adminglassfacade@gmail.com / admin123');
     }
   } catch (err) {
     console.error('Error seeding admin:', err);
