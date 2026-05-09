@@ -120,12 +120,43 @@ export default function WorkerDashboard() {
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(console.error);
+    }
     loadModels().catch(console.error);
     syncOfflineData();
     fetchHistory();
     fetchSites();
     fetchSlips();
   }, []);
+
+  useEffect(() => {
+    const checkReminder = () => {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        const now = new Date();
+        const hours = now.getHours();
+        const isEndOfDay = hours >= 17; // Reminder at 5 PM or later
+        
+        const lastReminderDate = localStorage.getItem('lastClockOutReminder');
+        const todayStr = now.toDateString();
+        
+        const isClockedIn = history[0] && history[0].status === 'clock-in';
+        const clockedInToday = history[0] && new Date(history[0].timestamp).toDateString() === todayStr;
+
+        if (isClockedIn && clockedInToday && isEndOfDay && lastReminderDate !== todayStr) {
+          localStorage.setItem('lastClockOutReminder', todayStr);
+          new Notification('Clock Out Reminder', {
+            body: 'It is the end of the day. Please remember to clock out before you leave!',
+          });
+        }
+      }
+    };
+
+    const intervalId = setInterval(checkReminder, 60000);
+    checkReminder();
+    
+    return () => clearInterval(intervalId);
+  }, [history]);
 
   const fetchSlips = async () => {
     try {

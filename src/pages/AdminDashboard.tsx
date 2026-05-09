@@ -629,6 +629,8 @@ export default function AdminDashboard() {
     try {
       const params = new URLSearchParams();
       params.append('userId', userId);
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) params.append('timezone', tz);
       const res = await fetch(`/api/reports/attendance/export?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
