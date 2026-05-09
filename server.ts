@@ -79,6 +79,20 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 let dbConnectionError = 'Connecting...';
 
+app.get('/api/debug/admin', async (req: any, res: any) => {
+  try {
+    const admin = await User.findOne({ role: 'admin' });
+    const allAdmins = await User.find({ role: 'admin' });
+    res.json({
+      admin: admin ? { email: admin.email, role: admin.role, id: admin._id } : null,
+      allAdmins: allAdmins.map(a => ({ email: a.email, id: a._id })),
+      dbConnection: mongoose.connection.readyState
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Database setup
 mongoose.connect(MONGODB_URI)
   .then(() => {
@@ -177,22 +191,39 @@ const SalarySlip = mongoose.model('SalarySlip', salarySlipSchema);
 // Seed admin user
 async function seedAdmin() {
   try {
-    let admin = await User.findOne({ role: 'admin' });
     const hashedPassword = await bcrypt.hash('admin123', 10);
+    const adminEmail = 'adminglassfacade@gmail.com';
     
-    if (!admin) {
-      await User.create({
-        email: 'adminglassfacade@gmail.com',
-        password: hashedPassword,
-        role: 'admin',
-        name: 'Admin User'
-      });
-      console.log('Admin user seeded: adminglassfacade@gmail.com / admin123');
-    } else {
-      admin.email = 'adminglassfacade@gmail.com';
-      admin.password = hashedPassword;
-      await admin.save();
-      console.log('Admin user updated: adminglassfacade@gmail.com / admin123');
+    try {
+      await User.findOneAndUpdate(
+        { role: 'admin' }, 
+        { 
+          $set: { 
+            email: adminEmail,
+            password: hashedPassword,
+            name: 'Admin User'
+          } 
+        }, 
+        { upsert: true, new: true }
+      );
+      console.log(`Admin user ensured: ${adminEmail} / admin123`);
+    } catch (upsertErr: any) {
+      // If there's a duplicate key collision (usually email), delete the conflicting users and recreate
+      if (upsertErr.code === 11000) {
+        console.log('Collision detected. Resetting conflicting admin accounts...');
+        await User.deleteMany({ email: adminEmail });
+        await User.deleteMany({ role: 'admin' });
+        
+        await User.create({
+          email: adminEmail,
+          password: hashedPassword,
+          role: 'admin',
+          name: 'Admin User'
+        });
+        console.log(`Admin user forcefully recreated: ${adminEmail} / admin123`);
+      } else {
+        throw upsertErr;
+      }
     }
   } catch (err) {
     console.error('Error seeding admin:', err);
@@ -420,8 +451,82 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
 
     console.log(`\n=== PASSWORD RESET OTP ===\nFor user: ${email}\nOTP: ${otp}\n===========================\n`);
 
+    const resetLink = `${req.headers.origin}/reset-password?token=${otp}`;
+
+    // Send Email via SMTP
+    try {
+      if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+        const transporter = getTransporter();
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || process.env.SMTP_USER,
+          to: user.email,
+          subject: 'Glass Fab System - Password Reset',
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+              <div style="background-color: #2563eb; color: white; padding: 20px; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px;">Password Reset</h1>
+              </div>
+              <div style="padding: 24px;">
+                <p>Hello ${user.name || 'User'},</p>
+                <p>You requested a password reset. Your OTP is: <strong>${otp}</strong></p>
+                <p>You can enter this OTP on the site, or click the button below directly:</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${resetLink}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
+                </div>
+                <p style="color: #666; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
+              </div>
+            </div>
+          `
+        });
+        console.log(`Password reset email sent to ${user.email} via SMTP.`);
+      } else {
+        console.log('Skipping SMTP: SMTP_USER or SMTP_PASS not set.');
+      }
+    } catch (mailErr) {
+      console.error('Failed to send SMTP email:', mailErr);
+    }
+
+    // Optional: Send WhatsApp automatically via Twilio if configured
+    try {
+      if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_WHATSAPP_NUMBER && user.mobile) {
+        const twilioSid = process.env.TWILIO_ACCOUNT_SID;
+        const twilioToken = process.env.TWILIO_AUTH_TOKEN;
+        const twilioFrom = process.env.TWILIO_WHATSAPP_NUMBER;
+        
+        let toMobile = user.mobile.replace(/[^0-9]/g, '');
+        if (!toMobile.startsWith('+')) {
+            // Assuming the standard international code if they used raw numbers (best bet)
+            // or just prepend '+' and hope it has country code
+            toMobile = '+' + toMobile;
+        }
+
+        const b64Auth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64');
+        const params = new URLSearchParams();
+        params.append('To', `whatsapp:${toMobile}`);
+        params.append('From', twilioFrom);
+        params.append('Body', `Glass Fab System\n\nYour password reset OTP is *${otp}*.\n\nOr click here to reset:\n${resetLink}`);
+
+        const result = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${b64Auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: params
+        });
+
+        if (result.ok) {
+          console.log(`WhatsApp message sent to ${user.mobile} via Twilio backend.`);
+        } else {
+          console.error('Failed to send Twilio WhatsApp message:', await result.text());
+        }
+      }
+    } catch (waErr) {
+      console.error('Failed to send WhatsApp message via Twilio:', waErr);
+    }
+
     res.json({ 
-      message: 'OTP sent to your registered mobile number via WhatsApp/SMS.',
+      message: 'OTP sent! An email has been dispatched via SMTP' + (user.mobile ? ' and WhatsApp.' : '.'),
       _dev_token: otp,
       mobile: user.mobile
     });
