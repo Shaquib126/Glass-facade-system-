@@ -389,6 +389,10 @@ export default function AdminDashboard() {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (newEmployeeId && !/^[a-zA-Z0-9]+$/.test(newEmployeeId)) {
+      alert('Employee ID must be alphanumeric');
+      return;
+    }
     setCreating(true);
     try {
       const payload = { 
@@ -517,6 +521,10 @@ export default function AdminDashboard() {
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
+    if (editForm.employeeId && !/^[a-zA-Z0-9]+$/.test(editForm.employeeId)) {
+      alert('Employee ID must be alphanumeric');
+      return;
+    }
     try {
       const payload = {
         ...editForm,
@@ -1040,7 +1048,7 @@ export default function AdminDashboard() {
                       <Input 
                         placeholder="Employee ID (Optional)" 
                         value={newEmployeeId} 
-                        onChange={e => setNewEmployeeId(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))} 
+                        onChange={e => setNewEmployeeId(e.target.value)} 
                         className="h-10 text-xs bg-bg"
                       />
                       <Input 
@@ -1532,7 +1540,7 @@ export default function AdminDashboard() {
                 <Input 
                   placeholder="Unique Alphanumeric ID (e.g. EMP123)" 
                   value={editForm.employeeId} 
-                  onChange={e => setEditForm({...editForm, employeeId: e.target.value.replace(/[^a-zA-Z0-9]/g, '')})} 
+                  onChange={e => setEditForm({...editForm, employeeId: e.target.value})} 
                 />
               </div>
               <div className="space-y-2">

@@ -77,6 +77,15 @@ export default function Login() {
          const whatsappLink = `https://wa.me/${data.mobile?.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Click here to reset your Glass Fab System password: ${resetLink}`)}`;
          const emailLink = `mailto:${email}?subject=Reset Your Password&body=${encodeURIComponent(`Click here to reset your Glass Fab System password: ${resetLink}`)}`;
          
+         // Automatically open links
+         if (data.mobile) {
+           window.open(whatsappLink, '_blank');
+         }
+         // Small delay for the second window to prevent aggressive popup blocking
+         setTimeout(() => {
+           window.location.href = emailLink;
+         }, 500);
+
          msg = (
            <div className="flex flex-col gap-3 relative z-50 pointer-events-auto text-left">
              <p className="text-sm font-medium">{data.message}</p>

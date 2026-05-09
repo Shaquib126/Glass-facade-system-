@@ -181,12 +181,12 @@ async function seedAdmin() {
     if (!adminExists) {
       const hashedPassword = await bcrypt.hash('admin123', 10);
       await User.create({
-        email: 'admin@glassfacade.com',
+        email: 'adminglassfacade@gmail.com',
         password: hashedPassword,
         role: 'admin',
         name: 'Admin User'
       });
-      console.log('Admin user seeded: admin@glassfacade.com / admin123');
+      console.log('Admin user seeded: adminglassfacade@gmail.com / admin123');
     }
   } catch (err) {
     console.error('Error seeding admin:', err);
