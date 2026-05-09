@@ -364,6 +364,16 @@ export default function AdminDashboard() {
         const msg = makingSalarySlipForUser.isBulk ? `Bulk: Generated ${data.count} slips.` : 'Salary slip issued!';
         setShowNotificationToast({ message: `${msg} Email sent if SMTP configured.`, show: true });
         setTimeout(() => setShowNotificationToast({ message: '', show: false }), 4000);
+        
+        if (!makingSalarySlipForUser.isBulk && makingSalarySlipForUser.mobile) {
+            let finalMobile = makingSalarySlipForUser.mobile.replace(/\D/g, '');
+            if (!finalMobile.startsWith('91') && finalMobile.length === 10) {
+                finalMobile = '91' + finalMobile;
+            }
+            const waMsg = encodeURIComponent(`Hello ${makingSalarySlipForUser.name},\nYour salary slip for ${salarySlipForm.period} has been issued.\nAmount: ₹${salarySlipForm.amount}\n${salarySlipForm.notes ? `Notes: ${salarySlipForm.notes}\n` : ''}You can view the full slip on your dashboard.\n\nThank you.`);
+            window.open(`https://wa.me/${finalMobile}?text=${waMsg}`, '_blank');
+        }
+
         setMakingSalarySlipForUser(null);
         setSalarySlipForm({ period: '', amount: '', notes: '' });
       } else {
@@ -624,6 +634,27 @@ export default function AdminDashboard() {
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [selectedUserTab, setSelectedUserTab] = useState('overview');
+
+  const [userSalarySlips, setUserSalarySlips] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (selectedUser && selectedUserTab === 'slips') {
+      fetchUserSalarySlips(selectedUser._id);
+    }
+  }, [selectedUser, selectedUserTab]);
+
+  const fetchUserSalarySlips = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/salary-slips/user/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setUserSalarySlips(await res.json());
+      }
+    } catch (e) {
+      console.error('Failed to fetch user salary slips', e);
+    }
+  };
 
   const exportUserReport = async (userId: string) => {
     try {
@@ -1192,6 +1223,11 @@ export default function AdminDashboard() {
             <form onSubmit={handleSendSalarySlip} className="p-6 space-y-4">
               <div className="space-y-2">
                 <p className="text-sm text-text-s mb-4">You are generating a salary slip for <strong className="text-text-p">{makingSalarySlipForUser.name}</strong>.</p>
+                {!makingSalarySlipForUser.isBulk && (
+                    <p className={`text-xs p-2 rounded ${makingSalarySlipForUser.mobile ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
+                       {makingSalarySlipForUser.mobile ? `Will open WhatsApp after generating (${makingSalarySlipForUser.mobile})` : 'User has no mobile number recorded, cannot send WhatsApp.'}
+                    </p>
+                )}
                 {makingSalarySlipForUser.isBulk && (
                   <p className="text-xs text-accent bg-accent/10 p-2 rounded">
                     Amounts will be calculated automatically based on days worked and daily wage in the given month. For best results, use YYYY-MM format like '2026-04'.
@@ -1253,13 +1289,13 @@ export default function AdminDashboard() {
             </div>
             
             <div className="flex bg-card-bg border-b border-card-border overflow-x-auto no-scrollbar">
-              {['overview', 'actions', 'records'].map(tab => (
+              {['overview', 'actions', 'records', 'slips'].map(tab => (
                 <button 
                   key={tab}
                   onClick={() => setSelectedUserTab(tab)}
                   className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider whitespace-nowrap transition-colors border-b-2 ${selectedUserTab === tab ? 'border-accent text-accent' : 'border-transparent text-text-s hover:text-text-p'}`}
                 >
-                  {tab === 'records' ? 'Attendance Logs' : tab}
+                  {tab === 'records' ? 'Logs' : tab === 'slips' ? 'Salary Slips' : tab}
                 </button>
               ))}
             </div>
@@ -1404,6 +1440,44 @@ export default function AdminDashboard() {
                       ))}
                       {attendance.filter(a => a.userId === selectedUser._id).length === 0 && (
                         <div className="p-8 text-center text-sm text-text-s">No logs available</div>
+                      )}
+                  </div>
+                </div>
+              )}
+
+              {selectedUserTab === 'slips' && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-semibold text-text-s uppercase tracking-wider">Issued Salary Slips</h4>
+                  <div className="border border-card-border rounded-xl bg-card-bg/50 divide-y divide-card-border max-h-[300px] overflow-y-auto">
+                      {userSalarySlips.map((slip, i) => (
+                        <div key={i} className="flex justify-between items-center p-3 hover:bg-card-border/10 transition-colors">
+                          <div>
+                            <p className="text-[13px] font-bold">{slip.period}</p>
+                            <p className="text-[11px] text-text-s mt-0.5">₹{slip.amount} • Issued {format(new Date(slip.issuedAt), 'MMM dd, yyyy')}</p>
+                            {slip.notes && <p className="text-[10px] text-text-s mt-0.5 italic">{slip.notes}</p>}
+                          </div>
+                          <div>
+                            {selectedUser.mobile && (
+                              <Button
+                                size="sm"
+                                className="h-7 text-[10px] px-2 bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20"
+                                onClick={() => {
+                                  let finalMobile = selectedUser.mobile.replace(/\D/g, '');
+                                  if (!finalMobile.startsWith('91') && finalMobile.length === 10) {
+                                      finalMobile = '91' + finalMobile;
+                                  }
+                                  const msg = encodeURIComponent(`Hello ${selectedUser.name},\nYour salary slip for ${slip.period} has been issued.\nAmount: ₹${slip.amount}\n${slip.notes ? `Notes: ${slip.notes}\n` : ''}You can view the full slip on your dashboard.\n\nThank you.`);
+                                  window.open(`https://wa.me/${finalMobile}?text=${msg}`, '_blank');
+                                }}
+                              >
+                                WhatsApp
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {userSalarySlips.length === 0 && (
+                        <div className="p-8 text-center text-sm text-text-s">No slips available</div>
                       )}
                   </div>
                 </div>

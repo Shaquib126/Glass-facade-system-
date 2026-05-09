@@ -23,29 +23,6 @@ export const getCroppedImg = async (imageSrc: string, pixelCrop: any, rotation =
 
   if (!ctx) return null;
 
-  const maxSize = Math.max(image.width, image.height);
-  const safeArea = 2 * ((maxSize / 2) * Math.sqrt(2));
-
-  canvas.width = safeArea;
-  canvas.height = safeArea;
-
-  ctx.translate(safeArea / 2, safeArea / 2);
-  ctx.rotate((rotation * Math.PI) / 180);
-  ctx.translate(-safeArea / 2, -safeArea / 2);
-
-  ctx.drawImage(
-    image,
-    safeArea / 2 - image.width / 2,
-    safeArea / 2 - image.height / 2
-  );
-
-  const data = ctx.getImageData(
-    safeArea / 2 - image.width / 2 + pixelCrop.x,
-    safeArea / 2 - image.height / 2 + pixelCrop.y,
-    pixelCrop.width,
-    pixelCrop.height
-  );
-
   const MAX_TARGET = 300;
   let targetWidth = pixelCrop.width;
   let targetHeight = pixelCrop.height;
@@ -62,17 +39,57 @@ export const getCroppedImg = async (imageSrc: string, pixelCrop: any, rotation =
     }
   }
 
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
-  ctx.putImageData(data, 0, 0);
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
 
-  const finalCanvas = document.createElement('canvas');
-  finalCanvas.width = targetWidth;
-  finalCanvas.height = targetHeight;
-  const finalCtx = finalCanvas.getContext('2d');
-  finalCtx?.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+  ctx.save();
+  ctx.translate(targetWidth / 2, targetHeight / 2);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.translate(-targetWidth / 2, -targetHeight / 2);
 
-  return finalCanvas.toDataURL('image/jpeg', 0.82);
+  // Instead of an intermediate huge canvas, draw image directly scaled and cropped
+  // Note: For complex rotation, this may slighty differ if the bounds go out, but for standard face crops it's usually fine,
+  // or a slightly larger intermediate context is used. Let's just create an intermediate context of exactly the unscaled crop size, not the full safe area.
+  // actually, to handle rotation easily without a huge canvas:
+  
+  // Create an offscreen canvas large enough for the rotated *crop box*
+  const safeCropArea = Math.max(pixelCrop.width, pixelCrop.height) * Math.sqrt(2);
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = safeCropArea;
+  tempCanvas.height = safeCropArea;
+  const tempCtx = tempCanvas.getContext('2d');
+  
+  if (!tempCtx) return null;
+  tempCtx.translate(safeCropArea / 2, safeCropArea / 2);
+  tempCtx.rotate((rotation * Math.PI) / 180);
+  tempCtx.translate(-safeCropArea / 2, -safeCropArea / 2);
+
+  // We draw the relevant part of the image
+  tempCtx.drawImage(
+    image,
+    pixelCrop.x + pixelCrop.width/2 - safeCropArea/2,
+    pixelCrop.y + pixelCrop.height/2 - safeCropArea/2,
+    safeCropArea,
+    safeCropArea,
+    0,
+    0,
+    safeCropArea,
+    safeCropArea
+  );
+
+  // Then draw it to our final resized canvas
+  // the center of tempCanvas is our crop center
+  ctx.restore();
+  ctx.drawImage(
+    tempCanvas,
+    safeCropArea/2 - pixelCrop.width/2,
+    safeCropArea/2 - pixelCrop.height/2,
+    pixelCrop.width,
+    pixelCrop.height,
+    0, 0, targetWidth, targetHeight
+  );
+
+  return canvas.toDataURL('image/jpeg', 0.82);
 };
 
 export default function WorkerDashboard() {
@@ -184,6 +201,7 @@ export default function WorkerDashboard() {
     const resetTimer = () => {
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
+        setView('main');
         setMessage('You have been logged out due to inactivity.');
         setStatus('error');
         setTimeout(() => logout(), 2000);
@@ -214,11 +232,12 @@ export default function WorkerDashboard() {
     };
   }, [logout]);
 
-  useEffect(() => {
-    if (view === 'profile' && !user?.hasFaceDescriptor && enrollStatus === 'idle') {
-      startEnrollCamera();
-    }
-  }, [view, user?.hasFaceDescriptor, enrollStatus]);
+  // removed auto-enroll
+  // useEffect(() => {
+  //   if (view === 'profile' && !user?.hasFaceDescriptor && enrollStatus === 'idle') {
+  //     startEnrollCamera();
+  //   }
+  // }, [view, user?.hasFaceDescriptor, enrollStatus]);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -260,7 +279,12 @@ export default function WorkerDashboard() {
            if (data) updateUser(data);
            setProfileMessage('Profile photo updated successfully');
         } else {
-           setProfileError('Failed to save profile photo');
+           let errMsg = 'Failed to save profile photo';
+           try {
+             const errData = await res.json();
+             if (errData.message) errMsg += ': ' + errData.message;
+           } catch (e) {}
+           setProfileError(errMsg);
         }
       }
       setImageToCrop(null);
@@ -739,20 +763,31 @@ export default function WorkerDashboard() {
                       
                       {enrollStatus === 'idle' && (
                         <div className="space-y-4">
-                          <div className="flex items-center justify-between p-4 rounded-xl border border-card-border bg-card-bg">
-                            <div className="flex items-center gap-3">
-                              <ScanFace className="w-5 h-5 text-accent" />
+                          {!user?.hasFaceDescriptor ? (
+                            <div className="bg-warning/10 border border-warning/20 rounded-xl p-6 text-center space-y-4">
+                              <ScanFace className="w-12 h-12 text-warning mx-auto" />
                               <div>
-                                <p className="text-sm font-medium">Face Login</p>
-                                <p className="text-xs text-text-s">
-                                  {user?.hasFaceDescriptor ? 'Configured' : 'Not configured'}
-                                </p>
+                                <h4 className="text-lg font-semibold text-warning">Enroll Your Face</h4>
+                                <p className="text-sm text-warning/80 mt-1">Set up facial recognition to quickly and securely log in and clock your attendance.</p>
                               </div>
+                              <Button type="button" className="w-full bg-warning hover:bg-warning/90 text-yellow-950 font-bold" size="lg" onClick={startEnrollCamera}>
+                                Start Face Scan
+                              </Button>
                             </div>
-                            <Button type="button" variant="outline" size="sm" onClick={startEnrollCamera}>
-                              {user?.hasFaceDescriptor ? 'Update Scan' : 'Set Up'}
-                            </Button>
-                          </div>
+                          ) : (
+                            <div className="flex items-center justify-between p-4 rounded-xl border border-card-border bg-card-bg">
+                              <div className="flex items-center gap-3">
+                                <ScanFace className="w-5 h-5 text-accent" />
+                                <div>
+                                  <p className="text-sm font-medium">Face Login</p>
+                                  <p className="text-xs text-text-s">Configured</p>
+                                </div>
+                              </div>
+                              <Button type="button" variant="outline" size="sm" onClick={startEnrollCamera}>
+                                Update Scan
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -1009,6 +1044,19 @@ export default function WorkerDashboard() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="space-y-6"
             >
+              {!user?.hasFaceDescriptor && (
+                 <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 flex flex-col items-center text-center gap-3">
+                    <ScanFace className="w-10 h-10 text-warning" />
+                    <div>
+                      <h3 className="font-semibold text-warning text-sm">Face Login Missing</h3>
+                      <p className="text-xs text-text-s mt-1">Enroll your face to securely log in and record your attendance.</p>
+                    </div>
+                    <Button onClick={() => setView('profile')} size="sm" className="bg-warning hover:bg-warning/90 text-yellow-950 w-full font-bold">
+                       Go To Enroll
+                    </Button>
+                 </div>
+              )}
+
               <div className={`grid gap-4 ${(!history[0] || history[0].status !== 'clock-in') ? 'grid-cols-1' : 'grid-cols-1'}`}>
                 {(!history[0] || history[0].status !== 'clock-in') ? (
                   <Button

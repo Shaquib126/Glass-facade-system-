@@ -825,8 +825,9 @@ app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
       profilePhoto: user.profilePhoto,
       hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
     });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+  } catch (error: any) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
   }
 });
 
@@ -1149,6 +1150,15 @@ app.get('/api/salary-slips/me', authenticateToken, async (req: any, res: any) =>
     res.json(slips);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching salary slips' });
+  }
+});
+
+app.get('/api/salary-slips/user/:userId', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const slips = await SalarySlip.find({ userId: req.params.userId }).sort({ issuedAt: -1 });
+    res.json(slips);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
