@@ -559,7 +559,7 @@ app.get('/api/feedback', authenticateToken, requireDashboardAccess, async (req: 
 
 app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
   try {
-    const { startDate, endDate, userId } = req.query;
+    const { startDate, endDate, userId, timezone } = req.query;
     let query: any = {};
 
     if (userId && userId !== 'all') {
@@ -577,13 +577,22 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
     const grouped: any = {};
     for (const r of (records as any[])) {
       const d = new Date(r.timestamp);
-      const dateKey = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-      const key = `${r.userEmail}_${dateKey}`;
+      
+      const dateOpts: any = {};
+      const timeOpts: any = { hour12: true, hour: 'numeric', minute: '2-digit', second: '2-digit' };
+      if (timezone) {
+        dateOpts.timeZone = timezone;
+        timeOpts.timeZone = timezone;
+      }
+      
+      // We use the local date string to group records on the same local date
+      const localDateStr = d.toLocaleDateString('en-US', dateOpts);
+      const key = `${r.userEmail}_${localDateStr}`;
       
       if (!grouped[key]) {
         grouped[key] = {
            sortableTime: d.getTime(), // For sorting rows later
-           date: d.toLocaleDateString(),
+           date: localDateStr,
            email: r.userEmail || '',
            clockIn: null,
            clockOut: null,
@@ -593,7 +602,7 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
         };
       }
       
-      const timeStr = d.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: '2-digit', second: '2-digit' });
+      const timeStr = d.toLocaleTimeString('en-US', timeOpts);
       
       if (r.status === 'clock-in') {
          // Descending order: the last clock-in encountered is the earliest in the day.

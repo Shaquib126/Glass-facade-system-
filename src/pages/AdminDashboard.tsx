@@ -463,6 +463,9 @@ export default function AdminDashboard() {
       if (filterStartDate) params.append('startDate', filterStartDate);
       if (filterEndDate) params.append('endDate', filterEndDate);
       if (filterUserId && filterUserId !== 'all') params.append('userId', filterUserId);
+      
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) params.append('timezone', tz);
 
       const res = await fetch(`/api/reports/attendance/export?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
