@@ -1078,13 +1078,13 @@ export default function AdminDashboard() {
                       <div key={u._id} className="flex items-center justify-between px-6 py-4 border-b border-card-border last:border-0 group hover:bg-card-border/10 transition-colors cursor-pointer" onClick={() => { setSelectedUser(u); setSelectedUserTab('overview'); }}>
                         <div className="flex items-center gap-3">
                           {u.profilePhoto ? (
-                            <img src={u.profilePhoto} alt={u.name} className="w-10 h-10 rounded-full border border-card-border bg-bg object-cover" />
+                            <img src={u.profilePhoto} alt={u.name} className="w-10 h-10 rounded-full border-2 border-accent/20 object-cover flex-shrink-0" />
                           ) : (
-                            <div className="w-10 h-10 rounded-full border border-card-border bg-bg flex items-center justify-center text-text-s font-bold">
+                            <div className="w-10 h-10 rounded-full border-2 border-card-border bg-card-bg flex items-center justify-center text-text-s font-bold flex-shrink-0">
                               {u.name.charAt(0).toUpperCase()}
                             </div>
                           )}
-                          <div>
+                          <div className="min-w-0">
                             <p className="font-semibold text-[14px] flex items-center gap-2 group-hover:text-accent transition-colors">
                               {u.name}
                               <span className="text-[9px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-1.5 py-0.5 rounded font-mono">

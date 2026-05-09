@@ -909,9 +909,9 @@ export default function WorkerDashboard() {
                                   };
                                 }
                                 if (record.status === 'clock-in') {
-                                  grouped[dateKey].clockIn = format(d, 'hh:mm a');
+                                  grouped[dateKey].clockIn = format(d, 'h:mm:ss a');
                                 } else if (record.status === 'clock-out') {
-                                  grouped[dateKey].clockOut = format(d, 'hh:mm a');
+                                  grouped[dateKey].clockOut = format(d, 'h:mm:ss a');
                                   if (record.workedHours) {
                                     grouped[dateKey].hours += record.workedHours;
                                   }

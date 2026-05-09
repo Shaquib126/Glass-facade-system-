@@ -40,10 +40,24 @@ if (!MONGODB_URI.startsWith('mongodb://') && !MONGODB_URI.startsWith('mongodb+sr
 let transporter: any = null;
 const getTransporter = () => {
   if (!transporter) {
+    const defaultHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    let defaultPort = Number(process.env.SMTP_PORT) || 465;
+    let defaultSecure = process.env.SMTP_SECURE === 'true' || defaultPort === 465;
+
+    // Use user settings if explicitly provided
+    if (process.env.SMTP_PORT) {
+      defaultPort = Number(process.env.SMTP_PORT);
+      defaultSecure = process.env.SMTP_SECURE === 'true' || defaultPort === 465;
+    }
+
     const config: any = {
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true' || Number(process.env.SMTP_PORT) === 465,
+      host: defaultHost,
+      port: defaultPort,
+      secure: defaultSecure,
+      requireTLS: true,
+      tls: {
+         rejectUnauthorized: false
+      },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 10000
@@ -560,20 +574,60 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
 
     const records = await Attendance.find(query).sort({ timestamp: -1 });
 
+    const grouped: any = {};
+    for (const r of (records as any[])) {
+      const d = new Date(r.timestamp);
+      const dateKey = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+      const key = `${r.userEmail}_${dateKey}`;
+      
+      if (!grouped[key]) {
+        grouped[key] = {
+           sortableTime: d.getTime(), // For sorting rows later
+           date: d.toLocaleDateString(),
+           email: r.userEmail || '',
+           clockIn: null,
+           clockOut: null,
+           workedHours: 0,
+           locIn: '',
+           locOut: ''
+        };
+      }
+      
+      const timeStr = d.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: '2-digit', second: '2-digit' });
+      
+      if (r.status === 'clock-in') {
+         // Descending order: the last clock-in encountered is the earliest in the day.
+         grouped[key].clockIn = timeStr;
+         grouped[key].locIn = (r.location && r.location.lat) ? `${r.location.lat}, ${r.location.lng}` : '';
+      } else if (r.status === 'clock-out') {
+         // Descending order: the first clock-out encountered is the latest in the day.
+         if (!grouped[key].clockOut) {
+             grouped[key].clockOut = timeStr;
+             grouped[key].locOut = (r.location && r.location.lat) ? `${r.location.lat}, ${r.location.lng}` : '';
+         }
+         if (r.workedHours) {
+           grouped[key].workedHours += r.workedHours;
+         }
+      }
+    }
+
     const csvRows = [
-      ['Date/Time', 'User Email', 'Status', 'Worked Hours', 'Latitude', 'Longitude', 'Offline Sync']
+      ['Date', 'User Email', 'Clock In Time', 'Clock Out Time', 'Total Worked Hours', 'Clock In Location', 'Clock Out Location']
     ];
 
-    for (const r of (records as any[])) {
-      csvRows.push([
-        new Date(r.timestamp).toLocaleString(),
-        r.userEmail || '',
-        r.status || '',
-        r.workedHours ?? '',
-        r.location?.lat || '',
-        r.location?.lng || '',
-        r.offline ? 'Yes' : 'No'
-      ]);
+    // Convert object to array and sort descending by time
+    const sortedGroups = Object.values(grouped).sort((a: any, b: any) => b.sortableTime - a.sortableTime);
+
+    for (const g of (sortedGroups as any[])) {
+       csvRows.push([
+         g.date,
+         g.email,
+         g.clockIn || '-',
+         g.clockOut || '-',
+         g.workedHours ? g.workedHours.toFixed(2) : '0',
+         g.locIn ? `"${g.locIn}"` : '',
+         g.locOut ? `"${g.locOut}"` : ''
+       ]);
     }
 
     const csvString = csvRows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
