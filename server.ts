@@ -100,6 +100,7 @@ const userSchema = new mongoose.Schema({
   mobile: { type: String, required: false },
   role: { type: String, default: 'user' },
   name: String,
+  employeeId: { type: String, unique: true, sparse: true },
   dailyWage: { type: Number, default: 0 },
   ottHours: { type: Number, default: 0 },
   faceDescriptor: [Number],
@@ -314,6 +315,7 @@ app.post('/api/auth/login', async (req: any, res: any) => {
         email: user.email,
         role: user.role,
         name: user.name,
+        employeeId: user.employeeId,
         profilePhoto: user.profilePhoto,
         hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
       }
@@ -356,6 +358,7 @@ app.post('/api/auth/login-face', async (req: any, res: any) => {
         email: user.email,
         role: user.role,
         name: user.name,
+        employeeId: user.employeeId,
         profilePhoto: user.profilePhoto,
         hasFaceDescriptor: true
       },
@@ -401,49 +404,20 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
     const user: any = await User.findOne({ email });
     
     if (!user) {
-      // Return success even if user not found to prevent email enumeration
-      return res.json({ message: 'If that email is in our system, we have sent a password reset link.' });
+      return res.json({ message: 'If that email is in our system, we have sent an OTP to your mobile.' });
     }
 
-    const token = crypto.randomBytes(20).toString('hex');
-    user.resetPasswordToken = token;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.resetPasswordToken = otp;
+    user.resetPasswordExpires = Date.now() + 600000; // 10 mins
     await user.save();
 
-    // In a real application, send this via email (e.g., using SendGrid, Nodemailer)
-    // For this environment, we'll log it and return it for testing purposes
-    const protocol = req.headers.host.includes('localhost') ? 'http' : 'https';
-    const resetUrl = `${protocol}://${req.headers.host}/reset-password?token=${token}`;
-    console.log(`\n=== PASSWORD RESET LINK ===\nFor user: ${email}\nLink: ${resetUrl}\n===========================\n`);
-
-    let emailStatus = 'skipped';
-    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-      try {
-        await getTransporter().sendMail({
-          from: `"Glass Facade System" <${process.env.SMTP_USER}>`,
-          to: user.email,
-          subject: 'Password Reset - Glass Facade',
-          text: `Please click the link below to reset your password:\n${resetUrl}\n\nIf you did not request this, please ignore this email.`,
-          html: `<p>Please click the link below to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you did not request this, please ignore this email.</p>`
-        });
-        console.log(`Password reset email sent to ${user.email}`);
-        emailStatus = 'sent';
-      } catch (emailErr) {
-        console.error('Failed to send reset email via Nodemailer:', emailErr);
-        emailStatus = 'failed';
-        (req as any).emailError = emailErr instanceof Error ? emailErr.message : String(emailErr);
-      }
-    } else {
-      console.log('NOTE: SMTP_USER or SMTP_PASS environments missing. Nodemailer skipping real email sending.');
-    }
+    console.log(`\n=== PASSWORD RESET OTP ===\nFor user: ${email}\nOTP: ${otp}\n===========================\n`);
 
     res.json({ 
-      message: emailStatus === 'failed' 
-        ? `Failed to send email: ${(req as any).emailError}. Please check your SMTP configuration.` 
-        : 'If that email is in our system, we have sent a password reset link.',
-      emailStatus,
-      resetUrl: emailStatus !== 'sent' ? resetUrl : undefined, // Provide fallback for testing
-      _dev_token: token // Included for testing in AI Studio without real email
+      message: 'OTP sent to your registered mobile number via WhatsApp/SMS.',
+      _dev_token: otp,
+      mobile: user.mobile
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -483,11 +457,19 @@ app.post('/api/auth/reset-password', async (req: any, res: any) => {
 
 app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const { email, password, name, role, faceDescriptor, dailyWage, ottHours, mobile } = req.body;
+    const { email, password, name, role, faceDescriptor, dailyWage, ottHours, mobile, employeeId } = req.body;
     
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ 
+      $or: [
+        { email },
+        ...(employeeId ? [{ employeeId }] : [])
+      ]
+    });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      if (existingUser.email === email) {
+        return res.status(400).json({ message: 'User already exists with this email' });
+      }
+      return res.status(400).json({ message: 'User already exists with this Employee ID' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -497,6 +479,7 @@ app.post('/api/auth/register', authenticateToken, requireAdmin, async (req: any,
       password: hashedPassword,
       name,
       mobile,
+      employeeId,
       role: role || 'user',
       dailyWage: dailyWage || 0,
       ottHours: ottHours || 0,
@@ -701,12 +684,60 @@ app.get('/api/reports/salary', authenticateToken, requireAdminOrManager, async (
   }
 });
 
+app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { name, currentPassword, newPassword, profilePhoto, mobile } = req.body;
+    const user: any = await User.findById(req.user.id);
+    
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (name) user.name = name;
+    if (profilePhoto) user.profilePhoto = profilePhoto;
+    if (mobile !== undefined) user.mobile = mobile;
+
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({ message: 'Current password is required to set a new password' });
+      }
+      const validPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!validPassword) {
+        return res.status(400).json({ message: 'Invalid current password' });
+      }
+      user.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    await user.save();
+
+    res.json({
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      name: user.name,
+      employeeId: user.employeeId,
+      profilePhoto: user.profilePhoto,
+      hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
+    });
+  } catch (error: any) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+});
+
 app.put('/api/users/:id', authenticateToken, requireAdmin, async (req: any, res: any) => {
   try {
-    const { name, email, role, dailyWage, ottHours, mobile } = req.body;
+    const { name, email, role, dailyWage, ottHours, mobile, employeeId } = req.body;
+    
+    // Check if employeeId is unique
+    if (employeeId) {
+      const existing = await User.findOne({ employeeId, _id: { $ne: req.params.id } });
+      if (existing) {
+        return res.status(400).json({ message: 'Employee ID is already in use' });
+      }
+    }
+
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
-      { name, email, role, dailyWage, ottHours, mobile },
+      { name, email, role, dailyWage, ottHours, mobile, employeeId },
       { new: true, select: '-password' }
     );
     if (!updatedUser) {
@@ -790,44 +821,6 @@ app.post('/api/users/me/descriptor', authenticateToken, async (req: any, res: an
     res.json({ message: 'Face descriptor updated' });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
-  try {
-    const { name, currentPassword, newPassword, profilePhoto, mobile } = req.body;
-    const user: any = await User.findById(req.user.id);
-    
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    if (name) user.name = name;
-    if (profilePhoto) user.profilePhoto = profilePhoto;
-    if (mobile !== undefined) user.mobile = mobile;
-
-    if (newPassword) {
-      if (!currentPassword) {
-        return res.status(400).json({ message: 'Current password is required to set a new password' });
-      }
-      const validPassword = await bcrypt.compare(currentPassword, user.password);
-      if (!validPassword) {
-        return res.status(400).json({ message: 'Invalid current password' });
-      }
-      user.password = await bcrypt.hash(newPassword, 10);
-    }
-
-    await user.save();
-
-    res.json({
-      id: user._id,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-      profilePhoto: user.profilePhoto,
-      hasFaceDescriptor: user.faceDescriptor && user.faceDescriptor.length > 0
-    });
-  } catch (error: any) {
-    console.error('Error updating profile:', error);
-    res.status(500).json({ message: error.message || 'Server error' });
   }
 });
 

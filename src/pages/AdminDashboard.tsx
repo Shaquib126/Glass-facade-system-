@@ -89,6 +89,7 @@ export default function AdminDashboard() {
   }, [attendance]);
 
   const [newEmail, setNewEmail] = useState('');
+  const [newEmployeeId, setNewEmployeeId] = useState('');
   const [newMobile, setNewMobile] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newName, setNewName] = useState('');
@@ -97,7 +98,7 @@ export default function AdminDashboard() {
   const [newOttHours, setNewOttHours] = useState('');
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '', ottHours: '', mobile: '' });
+  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '', ottHours: '', mobile: '', employeeId: '' });
 
   const [makingSalarySlipForUser, setMakingSalarySlipForUser] = useState<any>(null);
   const [salarySlipForm, setSalarySlipForm] = useState({ period: '', amount: '', notes: '' });
@@ -393,6 +394,7 @@ export default function AdminDashboard() {
       const payload = { 
         email: newEmail, 
         mobile: newMobile,
+        employeeId: newEmployeeId,
         password: newPassword, 
         name: newName, 
         role: newRole, 
@@ -410,6 +412,8 @@ export default function AdminDashboard() {
       });
       if (res.ok) {
         setNewEmail('');
+        setNewEmployeeId('');
+        setNewMobile('');
         setNewPassword('');
         setNewName('');
         setNewRole('user');
@@ -502,6 +506,7 @@ export default function AdminDashboard() {
     setEditForm({ 
       name: user.name || '', 
       email: user.email || '', 
+      employeeId: user.employeeId || '',
       mobile: user.mobile || '',
       role: user.role || 'user',
       dailyWage: user.dailyWage !== undefined ? String(user.dailyWage) : '0',
@@ -1033,6 +1038,12 @@ export default function AdminDashboard() {
                         className="h-10 text-xs bg-bg"
                       />
                       <Input 
+                        placeholder="Employee ID (Optional)" 
+                        value={newEmployeeId} 
+                        onChange={e => setNewEmployeeId(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))} 
+                        className="h-10 text-xs bg-bg"
+                      />
+                      <Input 
                         type="email" 
                         placeholder="Email Address" 
                         value={newEmail} 
@@ -1126,6 +1137,11 @@ export default function AdminDashboard() {
                               <span className="text-[9px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-1.5 py-0.5 rounded font-mono">
                                 {u.role}
                               </span>
+                              {u.employeeId && (
+                                <span className="text-[9px] text-text-p bg-bg border border-card-border px-1.5 py-0.5 rounded font-mono shadow-sm">
+                                  ID: {u.employeeId}
+                                </span>
+                              )}
                             </p>
                             <p className="text-[11px] text-text-s mt-0.5">{u.email}</p>
                             <div className="flex gap-2 mt-1">
@@ -1316,6 +1332,11 @@ export default function AdminDashboard() {
                     <span className="text-[10px] uppercase tracking-wider bg-accent/10 border border-accent/20 text-accent px-2 py-0.5 rounded font-mono">
                       {selectedUser.role}
                     </span>
+                    {selectedUser.employeeId && (
+                      <span className="text-[10px] uppercase tracking-wider bg-bg border border-card-border text-text-p px-2 py-0.5 rounded font-mono shadow-sm">
+                        ID: {selectedUser.employeeId}
+                      </span>
+                    )}
                   </h3>
                   <p className="text-sm text-text-s mt-1 truncate">{selectedUser.email}</p>
                   
@@ -1504,6 +1525,14 @@ export default function AdminDashboard() {
                   value={editForm.name} 
                   onChange={e => setEditForm({...editForm, name: e.target.value})} 
                   required 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Employee ID</label>
+                <Input 
+                  placeholder="Unique Alphanumeric ID (e.g. EMP123)" 
+                  value={editForm.employeeId} 
+                  onChange={e => setEditForm({...editForm, employeeId: e.target.value.replace(/[^a-zA-Z0-9]/g, '')})} 
                 />
               </div>
               <div className="space-y-2">

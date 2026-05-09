@@ -13,7 +13,11 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'camera' | 'processing' | 'forgot-password'>('idle');
+  const [loginType, setLoginType] = useState<'worker' | 'admin'>('worker');
   const [resetMessage, setResetMessage] = useState<React.ReactNode>('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const setAuth = useAuthStore((state) => state.setAuth);
   
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -65,19 +69,48 @@ export default function Login() {
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to send reset link');
+      if (!res.ok) throw new Error(data.message || 'Failed to send OTP');
       
       let msg: React.ReactNode = data.message;
-      if (data.resetUrl) {
+      if (data._dev_token) {
          msg = (
            <div className="flex flex-col gap-2 relative z-50 pointer-events-auto">
              <p>{data.message}</p>
-             <p className="text-xs font-semibold text-accent mt-2">Email bypassed/failed.</p>
-             <a href={data.resetUrl} className="underline text-blue-500 hover:text-blue-600 block break-all mt-1" target="_blank" rel="noopener noreferrer">Click here to reset your password directly</a>
+             <p className="text-xs font-semibold text-accent mt-2">Preview Dev Mode OTP: {data._dev_token}</p>
            </div>
          );
       }
       setResetMessage(msg);
+      setOtpSent(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp || !newPassword) {
+      setError('Please enter OTP and new password');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setResetMessage('');
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: otp, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to reset password');
+      
+      setResetMessage('Password reset successfully. You can now log in.');
+      setOtpSent(false);
+      setOtp('');
+      setNewPassword('');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -185,6 +218,24 @@ export default function Login() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {status === 'idle' && (
+              <div className="flex bg-card-bg p-1 rounded-xl mb-6 border border-card-border">
+                <button 
+                  type="button"
+                  className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${loginType === 'worker' ? 'bg-accent text-black shadow-sm' : 'text-text-p hover:bg-bg'}`}
+                  onClick={() => setLoginType('worker')}
+                >
+                  Worker Login
+                </button>
+                <button 
+                  type="button"
+                  className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${loginType === 'admin' ? 'bg-accent text-black shadow-sm' : 'text-text-p hover:bg-bg'}`}
+                  onClick={() => setLoginType('admin')}
+                >
+                  Admin Login
+                </button>
+              </div>
+            )}
             <AnimatePresence mode="wait">
               {status === 'idle' && (
                 <motion.form 
@@ -203,51 +254,81 @@ export default function Login() {
                   <div className="space-y-2">
                     <Input
                       type="email"
-                      placeholder="Email address"
+                      placeholder={loginType === 'worker' ? "Worker Email / ID" : "Admin Email Address"}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Input
-                      type="password"
-                      placeholder="Password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                    <div className="flex justify-end">
-                      <button 
-                        type="button" 
-                        onClick={() => { setStatus('forgot-password'); setError(''); setResetMessage(''); }}
-                        className="text-xs text-accent hover:underline"
-                      >
-                        Forgot Password?
-                      </button>
-                    </div>
-                  </div>
-                  <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold" size="lg" disabled={loading}>
-                    {loading ? 'Authenticating...' : 'Sign In with Password'}
-                  </Button>
                   
-                  <div className="relative my-6">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-card-border"></div>
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card-bg px-2 text-text-s">Or continue with</span>
-                    </div>
-                  </div>
+                  {loginType === 'admin' && (
+                    <>
+                      <div className="space-y-2">
+                        <Input
+                          type="password"
+                          placeholder="Password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                        <div className="flex justify-end">
+                          <button 
+                            type="button" 
+                            onClick={() => { setStatus('forgot-password'); setError(''); setResetMessage(''); }}
+                            className="text-xs text-accent hover:underline"
+                          >
+                            Forgot Password?
+                          </button>
+                        </div>
+                      </div>
+                      <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold" size="lg" disabled={loading}>
+                        {loading ? 'Authenticating...' : 'Sign In as Admin'}
+                      </Button>
+                    </>
+                  )}
 
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    className="w-full h-14 rounded-2xl text-lg font-semibold" 
-                    onClick={startFaceLogin}
-                  >
-                    <ScanFace className="w-5 h-5 mr-2" />
-                    Face Login
-                  </Button>
+                  {loginType === 'worker' && (
+                    <>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        className="w-full h-14 rounded-2xl text-lg font-semibold border-accent/20 bg-accent/5 hover:bg-accent/10 hover:border-accent/40 text-accent" 
+                        onClick={startFaceLogin}
+                      >
+                        <ScanFace className="w-6 h-6 mr-3" />
+                        Face Login
+                      </Button>
+
+                      <div className="relative my-6">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-card-border"></div>
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                          <span className="bg-card-bg px-2 text-text-s">Or use password</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Input
+                          type="password"
+                          placeholder="Password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                        <div className="flex justify-end">
+                          <button 
+                            type="button" 
+                            onClick={() => { setStatus('forgot-password'); setError(''); setResetMessage(''); }}
+                            className="text-xs text-accent hover:underline"
+                          >
+                            Forgot Password?
+                          </button>
+                        </div>
+                      </div>
+                      <Button type="submit" className="w-full bg-card-bg border border-card-border hover:bg-bg text-text-p font-semibold" size="lg" disabled={loading}>
+                        {loading ? 'Authenticating...' : 'Sign In with Password'}
+                      </Button>
+                    </>
+                  )}
                 </motion.form>
               )}
 
@@ -257,7 +338,7 @@ export default function Login() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  onSubmit={handleForgotPassword} 
+                  onSubmit={otpSent ? handleResetPassword : handleForgotPassword} 
                   className="space-y-4"
                 >
                   {error && (
@@ -271,25 +352,53 @@ export default function Login() {
                     </div>
                   )}
                   <p className="text-sm text-text-s text-center">
-                    Enter your email address and we'll send you a link to reset your password.
+                    {otpSent ? 'Enter the 6-digit OTP sent to your mobile and your new password.' : 'Enter your email address to receive an OTP on your mobile.'}
                   </p>
-                  <div className="space-y-2">
-                    <Input
-                      type="email"
-                      placeholder="Email address"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
+                  
+                  {!otpSent && (
+                    <div className="space-y-2">
+                      <Input
+                        type="email"
+                        placeholder="Email address"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  {otpSent && (
+                    <>
+                      <div className="space-y-2">
+                        <Input
+                          type="text"
+                          placeholder="6-digit OTP"
+                          value={otp}
+                          onChange={(e) => setOtp(e.target.value)}
+                          maxLength={6}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Input
+                          type="password"
+                          placeholder="New Password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </>
+                  )}
+
                   <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-black font-semibold" size="lg" disabled={loading}>
-                    {loading ? 'Sending...' : 'Send Reset Link'}
+                    {loading ? (otpSent ? 'Resetting...' : 'Sending...') : (otpSent ? 'Reset Password' : 'Send OTP')}
                   </Button>
                   <Button 
                     type="button" 
                     variant="ghost" 
                     className="w-full" 
-                    onClick={() => { setStatus('idle'); setError(''); setResetMessage(''); }}
+                    onClick={() => { setStatus('idle'); setError(''); setResetMessage(''); setOtpSent(false); }}
                   >
                     Back to Login
                   </Button>

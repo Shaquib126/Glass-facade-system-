@@ -117,6 +117,7 @@ export default function WorkerDashboard() {
   const [profileMessage, setProfileMessage] = useState('');
   const [profileError, setProfileError] = useState('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [showLogoutWarning, setShowLogoutWarning] = useState(false);
   
   const [enrollStatus, setEnrollStatus] = useState<'idle' | 'camera' | 'processing' | 'success' | 'error'>('idle');
   const [enrollMessage, setEnrollMessage] = useState('');
@@ -195,21 +196,37 @@ export default function WorkerDashboard() {
 
   // Auto-logout on 15 minutes of inactivity
   useEffect(() => {
-    const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 minutes configurable
-    let timeoutId: NodeJS.Timeout;
+    const INACTIVITY_WARNING_MS = 14 * 60 * 1000; // 14 mins
+    const INACTIVITY_LIMIT_MS = 15 * 60 * 1000; // 15 mins
+    let warningTimeoutId: NodeJS.Timeout;
+    let logoutTimeoutId: NodeJS.Timeout;
 
     const resetTimer = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
+      if (warningTimeoutId) clearTimeout(warningTimeoutId);
+      if (logoutTimeoutId) clearTimeout(logoutTimeoutId);
+      setShowLogoutWarning(false);
+
+      warningTimeoutId = setTimeout(() => {
+        setShowLogoutWarning(true);
+      }, INACTIVITY_WARNING_MS);
+
+      logoutTimeoutId = setTimeout(() => {
         setView('main');
         setMessage('You have been logged out due to inactivity.');
         setStatus('error');
         setTimeout(() => logout(), 2000);
+        setShowLogoutWarning(false);
       }, INACTIVITY_LIMIT_MS);
     };
 
-    const handleActivity = () => {
-      resetTimer();
+    const handleActivity = (e: any) => {
+      // Only reset timer if the warning is NOT showing.
+      // If warning is showing, we wait for explicit confirmation.
+      if (e?.type === 'extend-session') {
+        resetTimer();
+      } else if (!showLogoutWarning) {
+        resetTimer();
+      }
     };
 
     // Attach listeners to detect user activity
@@ -218,19 +235,22 @@ export default function WorkerDashboard() {
     window.addEventListener('scroll', handleActivity);
     window.addEventListener('click', handleActivity);
     window.addEventListener('touchstart', handleActivity);
+    window.addEventListener('extend-session', handleActivity);
 
     // Init timer
     resetTimer();
 
     return () => {
-      if (timeoutId) clearTimeout(timeoutId);
+      if (warningTimeoutId) clearTimeout(warningTimeoutId);
+      if (logoutTimeoutId) clearTimeout(logoutTimeoutId);
       window.removeEventListener('mousemove', handleActivity);
       window.removeEventListener('keydown', handleActivity);
       window.removeEventListener('scroll', handleActivity);
       window.removeEventListener('click', handleActivity);
       window.removeEventListener('touchstart', handleActivity);
+      window.removeEventListener('extend-session', handleActivity);
     };
-  }, [logout]);
+  }, [logout, showLogoutWarning]);
 
   // removed auto-enroll
   // useEffect(() => {
@@ -753,6 +773,13 @@ export default function WorkerDashboard() {
                       <Input value={editName} onChange={e => setEditName(e.target.value)} required />
                     </div>
 
+                    {user?.employeeId && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-text-s uppercase tracking-wider">Employee ID</label>
+                        <Input value={user.employeeId} readOnly className="opacity-70 cursor-not-allowed" />
+                      </div>
+                    )}
+
                     <div className="space-y-2">
                       <label className="text-xs font-medium text-text-s uppercase tracking-wider">Mobile Number (Optional)</label>
                       <Input value={editMobile} onChange={e => setEditMobile(e.target.value)} type="tel" />
@@ -1208,6 +1235,34 @@ export default function WorkerDashboard() {
                <Button variant="outline" onClick={() => setImageToCrop(null)} className="flex-1 border-card-border hover:bg-bg">Cancel</Button>
                <Button onClick={handleCropComplete} className="flex-1 bg-accent hover:bg-accent/90 text-white font-semibold">Apply Crop</Button>
              </div>
+          </div>
+        </div>
+      )}
+      {showLogoutWarning && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-bg border border-card-border rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col p-6 text-center animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold mb-2">Session timeout warning</h3>
+            <p className="text-text-s mb-6 text-sm">
+              Your session is about to expire due to inactivity. Do you want to stay logged in?
+            </p>
+            <div className="flex gap-3">
+              <Button 
+                onClick={() => logout()} 
+                variant="outline" 
+                className="flex-1"
+              >
+                Log Out
+              </Button>
+              <Button 
+                onClick={() => {
+                  setShowLogoutWarning(false);
+                  window.dispatchEvent(new CustomEvent('extend-session', { detail: 'extend-session' }));
+                }} 
+                className="bg-accent text-btn-text hover:bg-accent/90 flex-1 font-semibold"
+              >
+                Continue Session
+              </Button>
+            </div>
           </div>
         </div>
       )}
