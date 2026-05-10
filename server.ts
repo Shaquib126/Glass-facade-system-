@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import cron from 'node-cron';
+import { Resend } from 'resend';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,36 +39,85 @@ if (!MONGODB_URI.startsWith('mongodb://') && !MONGODB_URI.startsWith('mongodb+sr
 }
 
 let transporter: any = null;
+let resendClient: any = null;
+
 const getTransporter = () => {
+  if (process.env.RESEND_API_KEY) {
+    if (!resendClient) {
+      console.log('[SMTP init] Using Resend API');
+      resendClient = new Resend(process.env.RESEND_API_KEY);
+    }
+    return {
+      sendMail: async (options: any) => {
+        // Resend free tier requires verifiable domains or testing from onboarding@resend.dev
+        const fromAddress = process.env.SMTP_FROM || process.env.SMTP_USER || 'onboarding@resend.dev';
+        console.log(`[Email] Sending via Resend API from ${fromAddress} to ${options.to}`);
+        
+        const { data, error } = await resendClient.emails.send({
+          from: fromAddress,
+          to: options.to,
+          subject: options.subject,
+          html: options.html,
+          text: options.text,
+        });
+
+        if (error) {
+          console.error('[Resend Error]:', error);
+          throw new Error(error.message);
+        }
+        
+        console.log('[Resend Success]:', data);
+        return data;
+      }
+    };
+  }
+
   if (!transporter) {
     const defaultHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    let defaultPort = Number(process.env.SMTP_PORT) || 465;
+    const isGmail = defaultHost.includes('gmail.com');
+    let defaultPort = Number(process.env.SMTP_PORT) || (isGmail ? 465 : 587);
     let defaultSecure = process.env.SMTP_SECURE === 'true' || defaultPort === 465;
 
     // Use user settings if explicitly provided
     if (process.env.SMTP_PORT) {
       defaultPort = Number(process.env.SMTP_PORT);
-      defaultSecure = process.env.SMTP_SECURE === 'true' || defaultPort === 465;
+      defaultSecure = (process.env.SMTP_SECURE === 'true' || process.env.SMTP_SECURE === '1') || defaultPort === 465;
     }
 
-    const config: any = {
-      host: defaultHost,
-      port: defaultPort,
-      secure: defaultSecure,
-      requireTLS: true,
-      tls: {
-         rejectUnauthorized: false
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000
-    };
-    if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-      config.auth = {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS.replace(/\s+/g, ''), // strip spaces from App Password
+    console.log(`[SMTP init] Host: ${defaultHost}, Port: ${defaultPort}, Secure: ${defaultSecure}`);
+
+    let config: any = {};
+    
+    if (isGmail) {
+      console.log('[SMTP init] Using Gmail service configuration');
+      config = {
+        service: 'gmail',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS?.replace(/\s+/g, ''), // strip spaces from App Password
+        }
       };
+    } else {
+      config = {
+        host: defaultHost,
+        port: defaultPort,
+        secure: defaultSecure,
+        requireTLS: true,
+        tls: {
+           rejectUnauthorized: false
+        },
+        connectionTimeout: 20000,
+        greetingTimeout: 20000,
+        socketTimeout: 20000
+      };
+      if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+        config.auth = {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS.replace(/\s+/g, ''),
+        };
+      }
     }
+    
     transporter = nodemailer.createTransport(config);
   }
   return transporter;
@@ -491,7 +541,10 @@ app.post('/api/auth/forgot-password', async (req: any, res: any) => {
       if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_WHATSAPP_NUMBER && user.mobile) {
         const twilioSid = process.env.TWILIO_ACCOUNT_SID;
         const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-        const twilioFrom = process.env.TWILIO_WHATSAPP_NUMBER;
+        let twilioFrom = process.env.TWILIO_WHATSAPP_NUMBER;
+        if (!twilioFrom.startsWith('whatsapp:')) {
+           twilioFrom = `whatsapp:${twilioFrom}`;
+        }
         
         let toMobile = user.mobile.replace(/[^0-9]/g, '');
         if (!toMobile.startsWith('+')) {
@@ -1308,6 +1361,30 @@ app.post('/api/salary-slips', authenticateToken, requireAdminOrManager, async (r
       console.log('Skipping email send. Configure SMTP_USER and SMTP_PASS in Environment Variables to send actual emails.');
     }
 
+    if (userTarget.mobile && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_WHATSAPP_NUMBER) {
+       try {
+         const twilioClient = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+         
+         let toMobile = userTarget.mobile.replace(/[^0-9]/g, '');
+         if (!toMobile.startsWith('+')) {
+             toMobile = '+' + toMobile;
+         }
+
+         let twilioFrom = process.env.TWILIO_WHATSAPP_NUMBER;
+         if (!twilioFrom.startsWith('whatsapp:')) {
+             twilioFrom = `whatsapp:${twilioFrom}`;
+         }
+         await twilioClient.messages.create({
+           body: `Glass Facade System\n\nHello ${userTarget.name},\nYour salary slip for the period ${period} has been issued.\nTotal Amount: ₹${amount}\nNotes: ${notes || 'N/A'}\n\nPlease check your Worker Dashboard to view the details.\nThank you!`,
+           from: twilioFrom,
+           to: `whatsapp:${toMobile}`
+         });
+         console.log(`WhatsApp salary slip sent to ${userTarget.mobile} for ${userTarget.name}`);
+       } catch (waErr) {
+         console.error(`Failed to send WhatsApp message to ${userTarget.mobile}:`, waErr);
+       }
+    }
+
     res.status(201).json(newSlip);
   } catch (error) {
     res.status(500).json({ message: 'Error generating salary slip' });
@@ -1374,9 +1451,30 @@ app.post('/api/salary-slips/send-all', authenticateToken, requireAdminOrManager,
         } catch (emailError) {}
       }
       
-      // If mobile number exists, you would integrate Twilio here
-      if (u.mobile) {
-         console.log(`Sending SMS to ${u.mobile} for ${u.name}: Salary ₹${amount}`);
+      if (u.mobile && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_WHATSAPP_NUMBER) {
+         try {
+           const twilioClient = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+           
+           let toMobile = u.mobile.replace(/[^0-9]/g, '');
+           if (!toMobile.startsWith('+')) {
+               toMobile = '+' + toMobile;
+           }
+
+           let twilioFrom = process.env.TWILIO_WHATSAPP_NUMBER;
+           if (!twilioFrom.startsWith('whatsapp:')) {
+               twilioFrom = `whatsapp:${twilioFrom}`;
+           }
+           await twilioClient.messages.create({
+             body: `Glass Facade System\n\nHello ${u.name},\nYour salary slip for ${period} has been issued.\nTotal Amount: ₹${amount}\nDays Worked: ${daysWorked}\n\nPlease check your Dashboard.`,
+             from: twilioFrom,
+             to: `whatsapp:${toMobile}`
+           });
+           console.log(`WhatsApp salary slip sent to ${u.mobile} for ${u.name}`);
+         } catch (waErr) {
+           console.error(`Failed to send WhatsApp message to ${u.mobile}:`, waErr);
+         }
+      } else if (u.mobile) {
+         console.log(`Would send SMS to ${u.mobile} for ${u.name}: Salary ₹${amount} (Twilio not configured)`);
       }
     }
 
