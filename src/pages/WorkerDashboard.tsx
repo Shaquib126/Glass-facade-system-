@@ -7,7 +7,7 @@ import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, Us
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
 import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isBefore, isSameDay } from 'date-fns';
 import Cropper from 'react-easy-crop';
 
 export const getCroppedImg = async (imageSrc: string, pixelCrop: any, rotation = 0): Promise<string | null> => {
@@ -689,7 +689,28 @@ export default function WorkerDashboard() {
 
       <main className="flex-1 p-6 flex flex-col justify-center max-w-md mx-auto w-full">
         <AnimatePresence mode="wait">
-          {view === 'history' && (
+          {view === 'history' && (() => {
+            const currentMonthDays = eachDayOfInterval({ 
+              start: startOfMonth(new Date()), 
+              end: endOfMonth(new Date()) 
+            });
+            const today = new Date();
+            let presentDays = 0;
+            let absentDays = 0;
+
+            const monthlyData = currentMonthDays.map(day => {
+              const dayRecords = history.filter(record => isSameDay(new Date(record.timestamp), day));
+              const clockedIn = dayRecords.some(r => r.status === 'clock-in');
+              const clockedOut = dayRecords.some(r => r.status === 'clock-out');
+              const isPastDay = isBefore(day, today) && !isSameDay(day, today);
+              
+              if (clockedIn) presentDays++;
+              else if (isPastDay && day.getDay() !== 0) absentDays++; // Assuming Sunday (0) is not counted as absent if no clock in
+
+              return { day, clockedIn, clockedOut, isPastDay, dayRecords };
+            });
+
+            return (
             <motion.div
               key="history"
               initial={{ opacity: 0, x: 20 }}
@@ -699,39 +720,59 @@ export default function WorkerDashboard() {
             >
               <Card className="flex-1 flex flex-col max-h-[70vh]">
                 <CardHeader>
-                  <CardTitle>My Attendance History</CardTitle>
+                  <CardTitle>Monthly Attendance</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto -mx-6 px-6">
-                  <div className="space-y-0">
-                    {history.map((record, i) => (
-                      <div key={i} className="flex items-center justify-between py-3 border-b border-card-border last:border-0">
+                <CardContent className="flex-1 overflow-y-auto pt-0 pb-4">
+                  <div className="flex items-center justify-between p-3 mb-4 rounded-xl bg-card-bg border border-card-border shadow-sm">
+                    <div className="text-center">
+                      <p className="text-xs text-text-s font-medium uppercase tracking-wider">Present</p>
+                      <p className="text-xl font-semibold text-success">{presentDays}</p>
+                    </div>
+                    <div className="w-[1px] h-8 bg-card-border"></div>
+                    <div className="text-center">
+                      <p className="text-xs text-text-s font-medium uppercase tracking-wider">Absent / Leave</p>
+                      <p className="text-xl font-semibold text-destructive">{absentDays}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {monthlyData.filter(d => d.isPastDay || isSameDay(d.day, today)).reverse().map((data, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-card-border bg-card-bg hover:bg-accent/5 transition-colors">
                         <div>
-                          <p className="font-medium text-[14px]">
-                            {record.status === 'clock-in' ? 'Clocked In' : 'Clocked Out'}
-                            {record.workedHours !== undefined && (
-                              <span className="ml-2 text-[10px] text-text-p bg-bg px-2 py-0.5 rounded-md border border-card-border font-medium shadow-sm">
-                                {record.workedHours} hrs
-                              </span>
-                            )}
+                          <p className="font-medium text-[13px]">
+                            {format(data.day, 'EEE, MMM d, yyyy')}
                           </p>
-                          <p className="text-[11px] text-text-s">
-                            {format(new Date(record.timestamp), 'MMM d, yyyy • hh:mm a')}
-                          </p>
+                          {data.clockedIn && data.dayRecords.map((r: any, rIdx: number) => (
+                            <p key={rIdx} className="text-[11px] text-text-s mt-0.5">
+                              {r.status === 'clock-in' ? 'In: ' : 'Out: '} {format(new Date(r.timestamp), 'hh:mm a')}
+                              {r.workedHours && (
+                                <span className="ml-2 text-text-p bg-bg px-1.5 py-0 rounded font-medium shadow-sm">
+                                  {r.workedHours.toFixed(1)}h
+                                </span>
+                              )}
+                            </p>
+                          ))}
                         </div>
-                        <div className="flex items-center gap-1 text-[11px] text-success">
-                          <MapPin className="w-3 h-3" />
-                          Site Verified
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-bg shadow-sm">
+                          {data.clockedIn ? (
+                            <CheckCircle2 className="w-5 h-5 text-success" />
+                          ) : data.isPastDay ? (
+                            <XCircle className="w-5 h-5 text-destructive" />
+                          ) : (
+                            <div className="w-2 h-2 rounded-full bg-text-s opacity-30"></div>
+                          )}
                         </div>
                       </div>
                     ))}
-                    {history.length === 0 && (
-                      <p className="text-text-s text-center py-8 text-sm">No attendance records found.</p>
+                    {monthlyData.length === 0 && (
+                      <p className="text-text-s text-center py-8 text-sm">No records for this month.</p>
                     )}
                   </div>
                 </CardContent>
               </Card>
             </motion.div>
-          )}
+            );
+          })()}
 
           {view === 'profile' && (
             <motion.div

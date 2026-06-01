@@ -717,6 +717,11 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
       query.timestamp = {};
       if (startDate) query.timestamp.$gte = new Date(startDate).toISOString();
       if (endDate) query.timestamp.$lte = new Date(`${endDate}T23:59:59.999Z`).toISOString();
+    } else {
+      // Default to last 30 days (approximately 1 month)
+      const lastMonth = new Date();
+      lastMonth.setDate(lastMonth.getDate() - 30);
+      query.timestamp = { $gte: lastMonth.toISOString() };
     }
 
     const records = await Attendance.find(query).sort({ timestamp: -1 });
@@ -768,19 +773,24 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
     }
 
     const csvRows = [
-      ['Date', 'User Email', 'Clock In Time', 'Clock Out Time', 'Total Worked Hours', 'Clock In Location', 'Clock Out Location']
+      ['Date', 'User Email', 'Clock In Time', 'Clock Out Time', 'Total Worked Hours', 'OT Hours (Over 8h)', 'Clock In Location', 'Clock Out Location']
     ];
 
     // Convert object to array and sort descending by time
     const sortedGroups = Object.values(grouped).sort((a: any, b: any) => b.sortableTime - a.sortableTime);
 
     for (const g of (sortedGroups as any[])) {
+       let otHours = 0;
+       if (g.workedHours && g.workedHours > 8) {
+         otHours = g.workedHours - 8;
+       }
        csvRows.push([
          g.date,
          g.email,
          g.clockIn || '-',
          g.clockOut || '-',
          g.workedHours ? g.workedHours.toFixed(2) : '0',
+         otHours ? otHours.toFixed(2) : '0',
          g.locIn ? `"${g.locIn}"` : '',
          g.locOut ? `"${g.locOut}"` : ''
        ]);
