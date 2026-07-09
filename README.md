@@ -1,20 +1,14 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Glass Facade System
 
-# Run and deploy your AI Studio app
+A comprehensive field worker attendance and payroll management system designed for secure, location-verified tracking. 
 
-This contains everything you need to run your app locally.
+## Key Features
 
-View your app in AI Studio: https://ai.studio/apps/394223a7-3e70-4da9-aa28-91a3b0b7c97d
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- **Biometric Attendance**: Secure clock-in and clock-out using facial recognition (`face-api.js`).
+- **Geo-fencing & Location Tracking**: Captures GPS coordinates during attendance to ensure workers are physically present at the site.
+- **Payroll & Overtime (OT)**: Automatically calculates hours worked, processes overtime (hours exceeding 8h/day), and manages salary generation.
+- **Automated Notifications**: Integrates with Twilio (WhatsApp) and SMTP (Email) to send out salary slips, OTPs, and password reset links.
+- **Admin & Worker Dashboards**: 
+  - **Worker**: View monthly attendance history, track present/absent days, and manage face enrollment.
+  - **Admin**: Generate 30-day CSV attendance reports, issue bulk salary slips, and manage user accounts.
+- **Tech Stack**: Built with React, TypeScript, Tailwind CSS, Express, and MongoDB.

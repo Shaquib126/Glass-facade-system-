@@ -704,6 +704,99 @@ app.get('/api/feedback', authenticateToken, requireDashboardAccess, async (req: 
   }
 });
 
+
+app.get('/api/reports/attendance/export/me', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { timezone } = req.query;
+    let query: any = { userId: req.user.id };
+
+    // Default to last 31 days
+    const lastMonth = new Date();
+    lastMonth.setDate(lastMonth.getDate() - 31);
+    query.timestamp = { $gte: lastMonth.toISOString() };
+
+    const records = await Attendance.find(query).sort({ timestamp: -1 });
+
+    const grouped: any = {};
+    for (const r of (records as any[])) {
+      const d = new Date(r.timestamp);
+      
+      const dateOpts: any = {};
+      const timeOpts: any = { hour12: true, hour: 'numeric', minute: '2-digit', second: '2-digit' };
+      if (timezone) {
+        dateOpts.timeZone = timezone;
+        timeOpts.timeZone = timezone;
+      }
+      const dateKey = d.toLocaleDateString('en-US', dateOpts);
+      const timeStr = d.toLocaleTimeString('en-US', timeOpts);
+
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = {
+          date: dateKey,
+          email: req.user.email,
+          clockIn: null,
+          clockOut: null,
+          locIn: '',
+          locOut: '',
+          workedHours: 0
+        };
+      }
+      if (r.status === 'clock-in') {
+        if (!grouped[dateKey].clockIn || new Date(r.timestamp) < new Date(grouped[dateKey].clockInTime)) {
+          grouped[dateKey].clockIn = timeStr;
+          grouped[dateKey].clockInTime = r.timestamp;
+          if (r.location && r.location.lat) {
+             grouped[dateKey].locIn = `"${r.location.lat}, ${r.location.lng}"`;
+          }
+        }
+      } else {
+        if (!grouped[dateKey].clockOut || new Date(r.timestamp) > new Date(grouped[dateKey].clockOutTime)) {
+          grouped[dateKey].clockOut = timeStr;
+          grouped[dateKey].clockOutTime = r.timestamp;
+          if (r.location && r.location.lat) {
+             grouped[dateKey].locOut = `"${r.location.lat}, ${r.location.lng}"`;
+          }
+        }
+      }
+      if (r.workedHours) {
+        grouped[dateKey].workedHours = Math.max(grouped[dateKey].workedHours || 0, r.workedHours);
+      }
+    }
+
+    const csvRows = [
+      ['Date', 'User Email', 'Clock In Time', 'Clock Out Time', 'Total Worked Hours', 'OT Hours (Over 8h)', 'Clock In Location', 'Clock Out Location']
+    ];
+
+    const sortedGroups = Object.values(grouped).sort((a: any, b: any) => {
+       return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+
+    for (const g of (sortedGroups as any[])) {
+       let otHours = 0;
+       if (g.workedHours && g.workedHours > 8) {
+         otHours = g.workedHours - 8;
+       }
+       csvRows.push([
+         g.date,
+         g.email,
+         g.clockIn || '-',
+         g.clockOut || '-',
+         g.workedHours ? g.workedHours.toFixed(2) : '0',
+         otHours ? otHours.toFixed(2) : '0',
+         g.locIn ? `"${g.locIn}"` : '',
+         g.locOut ? `"${g.locOut}"` : ''
+       ]);
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="my_attendance.csv"');
+    res.send(csvRows.map(e => e.join(',')).join('\n'));
+
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
   try {
     const { startDate, endDate, userId, timezone } = req.query;
@@ -718,9 +811,9 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
       if (startDate) query.timestamp.$gte = new Date(startDate).toISOString();
       if (endDate) query.timestamp.$lte = new Date(`${endDate}T23:59:59.999Z`).toISOString();
     } else {
-      // Default to last 30 days (approximately 1 month)
+      // Default to last 31 days
       const lastMonth = new Date();
-      lastMonth.setDate(lastMonth.getDate() - 30);
+      lastMonth.setDate(lastMonth.getDate() - 31);
       query.timestamp = { $gte: lastMonth.toISOString() };
     }
 
@@ -1160,9 +1253,14 @@ app.get('/api/attendance', authenticateToken, requireDashboardAccess, async (req
         endDay.setHours(23, 59, 59, 999);
         query.timestamp.$lte = endDay.toISOString();
       }
+    } else {
+      // Default to last 31 days
+      const thirtyOneDaysAgo = new Date();
+      thirtyOneDaysAgo.setDate(thirtyOneDaysAgo.getDate() - 31);
+      query.timestamp = { $gte: thirtyOneDaysAgo.toISOString() };
     }
 
-    const records = await Attendance.find(query).sort({ timestamp: -1 }).limit(100);
+    const records = await Attendance.find(query).sort({ timestamp: -1 });
     res.json(records);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -1170,6 +1268,46 @@ app.get('/api/attendance', authenticateToken, requireDashboardAccess, async (req
 });
 
 // Auto clock-out at 6:00 PM (18:00) using node-cron
+
+// Endpoint for external cron jobs (e.g., cron-job.org) to trigger auto clock-out on platforms like Render where the server sleeps
+app.get('/api/cron/auto-clockout', async (req: any, res: any) => {
+  try {
+    console.log('Running triggered task: Auto Clock-Out');
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ message: 'Database not connected.' });
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let count = 0;
+    const users = await User.find({ role: 'user' });
+    
+    for (const user of users) {
+      const lastRecord = await Attendance.findOne({ userId: user._id.toString() }).sort({ timestamp: -1 });
+      if (lastRecord && lastRecord.status === 'clock-in') {
+        const inTime = new Date(lastRecord.timestamp).getTime();
+        const outTime = new Date().getTime();
+        let hours = (outTime - inTime) / (1000 * 60 * 60);
+        if (hours < 0) hours = 0;
+        
+        await Attendance.create({
+          userId: user._id.toString(),
+          userEmail: user.email,
+          status: 'clock-out',
+          location: { lat: 0, lng: 0 },
+          timestamp: new Date().toISOString(),
+          workedHours: hours
+        });
+        count++;
+      }
+    }
+    res.json({ message: 'Auto clock-out completed', autoClockedOutUsers: count });
+  } catch (error) {
+    console.error('Error in auto clock-out endpoint:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 cron.schedule('0 18 * * *', async () => {
   try {
     console.log('Running scheduled task: Auto Clock-Out at 6 PM');
@@ -1303,7 +1441,12 @@ app.delete('/api/gallery/:id', authenticateToken, requireAdminOrManager, async (
 
 app.get('/api/attendance/me', authenticateToken, async (req: any, res: any) => {
   try {
-    const records = await Attendance.find({ userId: req.user.id }).sort({ timestamp: -1 }).limit(20);
+    const thirtyOneDaysAgo = new Date();
+    thirtyOneDaysAgo.setDate(thirtyOneDaysAgo.getDate() - 31);
+    const records = await Attendance.find({ 
+      userId: req.user.id,
+      timestamp: { $gte: thirtyOneDaysAgo.toISOString() }
+    }).sort({ timestamp: -1 });
     res.json(records);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });

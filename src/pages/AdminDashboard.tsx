@@ -1371,7 +1371,7 @@ export default function AdminDashboard() {
                         onClick={() => exportUserReport(selectedUser._id)}
                       >
                         <Download className="w-4 h-4" />
-                        Download Full Attendance & Logs
+                        Download 30-Day Attendance CSV
                       </Button>
                     </div>
                   </div>

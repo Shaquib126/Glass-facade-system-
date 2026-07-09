@@ -1,6 +1,6 @@
 import * as faceapi from 'face-api.js';
 
-const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+const MODEL_URL = '/models';
 
 // Configurable threshold for face matching. Lower is stricter.
 export const DEFAULT_MATCH_THRESHOLD = 0.5;

@@ -3,7 +3,7 @@ import { useAuthStore, useOfflineStore } from '../store';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
-import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload, RotateCw, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
+import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload, RotateCw, RotateCcw, ZoomIn, ZoomOut, Download } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
 import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -719,8 +719,37 @@ export default function WorkerDashboard() {
               className="flex-1 flex flex-col"
             >
               <Card className="flex-1 flex flex-col max-h-[70vh]">
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle>Monthly Attendance</CardTitle>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="h-8 px-3 text-[10px] text-accent hover:bg-accent/10 border-accent/30 shadow-sm"
+                    onClick={async () => {
+                      try {
+                        const params = new URLSearchParams();
+                        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                        if (tz) params.append('timezone', tz);
+                        const res = await fetch(`/api/reports/attendance/export/me?${params.toString()}`, {
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
+                        if (!res.ok) throw new Error('Failed to download');
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        a.download = `my_attendance_${new Date().getTime()}.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    }}
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1" /> EXPORT CSV
+                  </Button>
                 </CardHeader>
                 <CardContent className="flex-1 overflow-y-auto pt-0 pb-4">
                   <div className="flex items-center justify-between p-3 mb-4 rounded-xl bg-card-bg border border-card-border shadow-sm">
