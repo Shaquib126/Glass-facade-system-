@@ -17,10 +17,27 @@ export default function App() {
   useEffect(() => {
     if (!token || !user) return;
     
-    // Auto logout at 10 PM (22:00)
-    const checkTime = setInterval(() => {
+    // Auto clock-out and logout at 10 PM (22:00)
+    const checkTime = setInterval(async () => {
       const now = new Date();
       if (now.getHours() === 22 && now.getMinutes() === 0) {
+        try {
+          await fetch('/api/attendance', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              status: 'clock-out',
+              location: { lat: 0, lng: 0 },
+              timestamp: new Date().toISOString(),
+              offline: false
+            })
+          });
+        } catch (e) {
+          console.error('Auto clock-out failed', e);
+        }
         logout();
       }
     }, 30000); // check every 30 seconds
@@ -45,6 +62,9 @@ export default function App() {
         <WorkerDashboard />
       )}
       <Chatbot />
+      <div className="fixed bottom-2 right-2 pointer-events-none opacity-20 text-xs font-mono font-bold tracking-widest z-50 select-none text-text-s mix-blend-difference">
+        Shaquib developer
+      </div>
     </>
   );
 }

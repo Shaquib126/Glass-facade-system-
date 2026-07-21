@@ -7,6 +7,9 @@ import { Input } from '../components/ui/Input';
 import { format } from 'date-fns';
 import { Edit2, Trash2, X, LogOut, Filter, Download, Bell, AlertTriangle, Moon, Sun, CheckCircle, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { googleSignIn, getAccessToken } from '../lib/firebase';
+import { createAndPopulateSheet } from '../lib/googleSheets';
 
 const UserAutocomplete = ({ users, value, onChange }: { users: any[], value: string, onChange: (val: string) => void }) => {
   const [search, setSearch] = useState('');
@@ -87,6 +90,30 @@ export default function AdminDashboard() {
     });
     return Object.values(summary).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [attendance]);
+
+  const weeklyChartData = React.useMemo(() => {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const workerHours: Record<string, { name: string; hours: number }> = {};
+
+    attendance.forEach(record => {
+      const recordDate = new Date(record.timestamp);
+      if (record.status === 'clock-out' && record.workedHours && recordDate >= sevenDaysAgo) {
+        const user = users.find(u => u._id === record.userId);
+        const name = user ? user.name : record.userEmail;
+        if (!workerHours[name]) {
+          workerHours[name] = { name, hours: 0 };
+        }
+        workerHours[name].hours += record.workedHours;
+      }
+    });
+
+    return Object.values(workerHours)
+      .map(item => ({ name: item.name, 'Total Hours': Number(item.hours.toFixed(2)) }))
+      .sort((a, b) => b['Total Hours'] - a['Total Hours']);
+  }, [attendance, users]);
 
   const [newEmail, setNewEmail] = useState('');
   const [newEmployeeId, setNewEmployeeId] = useState('');
@@ -505,6 +532,51 @@ export default function AdminDashboard() {
     }
   };
 
+  const [isSyncing, setIsSyncing] = useState(false);
+  const syncToGoogleSheets = async () => {
+    setIsSyncing(true);
+    try {
+      // Get data
+      const params = new URLSearchParams();
+      if (filterStartDate) params.append('startDate', filterStartDate);
+      if (filterEndDate) params.append('endDate', filterEndDate);
+      if (filterUserId && filterUserId !== 'all') params.append('userId', filterUserId);
+      
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) params.append('timezone', tz);
+
+      const res = await fetch(`/api/reports/attendance/export?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch report for sync');
+      
+      const csvData = await res.text();
+
+      // Ensure user is authenticated with Google
+      let accessToken = await getAccessToken();
+      if (!accessToken) {
+        const authResult = await googleSignIn();
+        if (authResult?.accessToken) {
+          accessToken = authResult.accessToken;
+        } else {
+          throw new Error('Google Sign-In failed or was cancelled.');
+        }
+      }
+
+      // Create and populate sheet
+      const title = `Attendance Report - ${new Date().toLocaleDateString()}`;
+      const sheetUrl = await createAndPopulateSheet(accessToken, title, csvData);
+      
+      alert(`Successfully synced to Google Sheets!\n\nLink: ${sheetUrl}`);
+      window.open(sheetUrl, '_blank');
+    } catch (err) {
+      console.error(err);
+      alert('Error syncing to Google Sheets');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const startEditing = (user: any) => {
     setEditingUser(user);
     setEditForm({ 
@@ -588,6 +660,53 @@ export default function AdminDashboard() {
     } catch(err) {
        console.error(err);
        alert("Failed to download salary report.");
+    }
+  };
+
+  const syncSalaryReportToSheets = async () => {
+    setIsSyncing(true);
+    try {
+       const currentMonth = new Date().toISOString().slice(0, 7);
+       const monthParam = filterStartDate ? filterStartDate.substring(0, 7) : currentMonth;
+       const res = await fetch(`/api/reports/salary?month=${monthParam}`, {
+          headers: { Authorization: `Bearer ${token}` }
+       });
+       
+       if (!res.ok) throw new Error("Failed to fetch report");
+       
+       const data = await res.json();
+       const headers = ["Name", "Email", "Role", "Daily Wage", "Days Worked", "Total Salary"];
+       const rows = data.map((r: any) => [
+         `"${r.name || ''}"`, 
+         `"${r.email || ''}"`, 
+         r.role, 
+         r.dailyWage, 
+         r.daysWorked, 
+         r.totalSalary
+       ]);
+       
+       const csvData = [headers.join(","), ...rows.map((e: any[]) => e.join(","))].join("\n");
+
+       let accessToken = await getAccessToken();
+       if (!accessToken) {
+         const authResult = await googleSignIn();
+         if (authResult?.accessToken) {
+           accessToken = authResult.accessToken;
+         } else {
+           throw new Error('Google Sign-In failed or was cancelled.');
+         }
+       }
+
+       const title = `Salary Report - ${monthParam}`;
+       const sheetUrl = await createAndPopulateSheet(accessToken, title, csvData);
+       
+       alert(`Successfully synced Salary Report to Google Sheets!\n\nLink: ${sheetUrl}`);
+       window.open(sheetUrl, '_blank');
+    } catch (error) {
+       console.error("Salary sync error:", error);
+       alert("Could not sync salary report to Google Sheets");
+    } finally {
+       setIsSyncing(false);
     }
   };
 
@@ -692,6 +811,45 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error(err);
       alert('Failed to download attendance report for this user');
+    }
+  };
+
+  const syncUserReportToSheets = async (userId: string) => {
+    setIsSyncing(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('userId', userId);
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) params.append('timezone', tz);
+
+      const res = await fetch(`/api/reports/attendance/export?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch user report for sync');
+      
+      const csvData = await res.text();
+
+      let accessToken = await getAccessToken();
+      if (!accessToken) {
+        const authResult = await googleSignIn();
+        if (authResult?.accessToken) {
+          accessToken = authResult.accessToken;
+        } else {
+          throw new Error('Google Sign-In failed or was cancelled.');
+        }
+      }
+
+      const userName = users.find(u => u._id === userId)?.name || 'Worker';
+      const title = `${userName} - 30-Day Attendance - ${new Date().toLocaleDateString()}`;
+      const sheetUrl = await createAndPopulateSheet(accessToken, title, csvData);
+      
+      alert(`Successfully synced ${userName}'s report to Google Sheets!\n\nLink: ${sheetUrl}`);
+      window.open(sheetUrl, '_blank');
+    } catch (err) {
+      console.error(err);
+      alert('Error syncing user report to Google Sheets');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -812,6 +970,49 @@ export default function AdminDashboard() {
                 </div>
               </Card>
 
+              {/* Bento 1.5: Weekly Attendance Overview */}
+              <Card className="flex flex-col shadow-sm">
+                <CardHeader className="pb-3 border-b border-card-border/50">
+                  <CardTitle>Weekly Attendance Overview (Last 7 Days)</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  {weeklyChartData.length > 0 ? (
+                    <div className="h-[250px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={weeklyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--theme-card-border)" />
+                          <XAxis 
+                            dataKey="name" 
+                            tick={{ fontSize: 10, fill: 'var(--theme-text-s)' }} 
+                            tickLine={false} 
+                            axisLine={false} 
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 10, fill: 'var(--theme-text-s)' }} 
+                            tickLine={false} 
+                            axisLine={false} 
+                          />
+                          <Tooltip 
+                            cursor={{ fill: 'var(--theme-bg)' }}
+                            contentStyle={{ backgroundColor: 'var(--theme-card-bg)', border: '1px solid var(--theme-card-border)', borderRadius: '6px', fontSize: '12px', color: 'var(--theme-text-p)' }}
+                          />
+                          <Bar 
+                            dataKey="Total Hours" 
+                            fill="var(--theme-accent)" 
+                            radius={[4, 4, 0, 0]} 
+                            barSize={30}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="h-[250px] flex items-center justify-center text-text-s text-sm">
+                      No attendance data for the last 7 days.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Bento 2: Live Activity Feed & Filters */}
               <Card className="flex flex-col h-[450px] shadow-sm">
                 <CardHeader className="pb-3 border-b border-card-border/50">
@@ -851,6 +1052,9 @@ export default function AdminDashboard() {
                         </Button>
                         <Button type="button" size="sm" onClick={downloadAttendanceReport} className="h-9 px-4 text-xs bg-success/10 text-success hover:bg-success/20">
                           <Download className="w-3.5 h-3.5 mr-1" /> Export
+                        </Button>
+                        <Button type="button" size="sm" onClick={syncToGoogleSheets} disabled={isSyncing} className="h-9 px-4 text-xs bg-success/10 text-success hover:bg-success/20">
+                          <FileText className="w-3.5 h-3.5 mr-1" /> {isSyncing ? 'Syncing...' : 'Sync to Sheets'}
                         </Button>
                         {isFiltering && (
                           <Button type="button" size="sm" variant="outline" className="h-9 px-3 text-xs" onClick={clearFilters}>
@@ -1124,6 +1328,9 @@ export default function AdminDashboard() {
                       <Button variant="outline" size="sm" onClick={downloadSalaryReport} className="h-8 px-3 text-[10px] text-text-p hover:text-accent hover:border-accent/50 shadow-sm" title="Download Salary CSV">
                         <Download className="w-3.5 h-3.5 mr-1.5" /> EXPORT
                       </Button>
+                      <Button variant="outline" size="sm" onClick={syncSalaryReportToSheets} disabled={isSyncing} className="h-8 px-3 text-[10px] text-success hover:bg-success/10 border-success/30 shadow-sm" title="Sync to Google Sheets">
+                        <FileText className="w-3.5 h-3.5 mr-1.5" /> {isSyncing ? 'SYNCING...' : 'SYNC TO SHEETS'}
+                      </Button>
                     </div>
                   )}
                 </CardHeader>
@@ -1372,6 +1579,14 @@ export default function AdminDashboard() {
                       >
                         <Download className="w-4 h-4" />
                         Download 30-Day Attendance CSV
+                      </Button>
+                      <Button 
+                        className="w-full justify-start gap-3 bg-success/10 text-success hover:bg-success/20 border border-success/20"
+                        onClick={() => syncUserReportToSheets(selectedUser._id)}
+                        disabled={isSyncing}
+                      >
+                        <FileText className="w-4 h-4" />
+                        {isSyncing ? 'Syncing...' : 'Sync to Google Sheets'}
                       </Button>
                     </div>
                   </div>

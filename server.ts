@@ -1308,9 +1308,9 @@ app.get('/api/cron/auto-clockout', async (req: any, res: any) => {
   }
 });
 
-cron.schedule('0 18 * * *', async () => {
+cron.schedule('0 22 * * *', async () => {
   try {
-    console.log('Running scheduled task: Auto Clock-Out at 6 PM');
+    console.log('Running scheduled task: Auto Clock-Out at 10 PM');
     if (mongoose.connection.readyState !== 1) {
       console.log('Skipping auto clock-out: Database not connected.');
       return;
