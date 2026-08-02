@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { googleSignIn, getAccessToken } from '../lib/firebase';
 import { createAndPopulateSheet } from '../lib/googleSheets';
+import { MonthlyAttendanceTable } from '../components/MonthlyAttendanceTable';
 
 const UserAutocomplete = ({ users, value, onChange }: { users: any[], value: string, onChange: (val: string) => void }) => {
   const [search, setSearch] = useState('');
@@ -62,8 +63,14 @@ export default function AdminDashboard() {
   const [sites, setSites] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [showNotificationToast, setShowNotificationToast] = useState<{message: string, show: boolean}>({message: '', show: false});
+  const [toast, setToast] = useState<{message: string, type: 'error'|'success'|'info', show: boolean}>({message: '', type: 'info', show: false});
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   
+  const showToastMsg = (message: string, type: 'error'|'success'|'info' = 'error') => {
+    setToast({ message, type, show: true });
+    setTimeout(() => setToast(prev => ({...prev, show: false})), 4000);
+  };
+
   // Filtering state
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
@@ -126,6 +133,8 @@ export default function AdminDashboard() {
   const [creating, setCreating] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [editForm, setEditForm] = useState({ name: '', email: '', role: '', dailyWage: '', ottHours: '', mobile: '', employeeId: '' });
+  const [editingAttendance, setEditingAttendance] = useState<any>(null);
+  const [attendanceEditForm, setAttendanceEditForm] = useState({ status: '', timestamp: '', workedHours: '' });
 
   const [makingSalarySlipForUser, setMakingSalarySlipForUser] = useState<any>(null);
   const [salarySlipForm, setSalarySlipForm] = useState({ period: '', amount: '', notes: '' });
@@ -261,7 +270,7 @@ export default function AdminDashboard() {
         setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
       } else {
         const data = await res.json();
-        alert(data.message || 'Failed to clock in user');
+        showToastMsg(data.message || 'Failed to clock in user');
       }
     } catch (err) {
       console.error(err);
@@ -284,7 +293,7 @@ export default function AdminDashboard() {
         setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
       } else {
         const data = await res.json();
-        alert(data.message || 'Failed to clock out user');
+        showToastMsg(data.message || 'Failed to clock out user');
       }
     } catch (err) {
       console.error(err);
@@ -296,7 +305,7 @@ export default function AdminDashboard() {
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert("Image size must be less than 5MB");
+      showToastMsg("Image size must be less than 5MB");
       return;
     }
 
@@ -323,11 +332,11 @@ export default function AdminDashboard() {
           setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
         } else {
           const data = await res.json();
-          alert(data.message || 'Failed to upload image');
+          showToastMsg(data.message || 'Failed to upload image');
         }
       } catch (err) {
         console.error(err);
-        alert('Failed to upload image');
+        showToastMsg('Failed to upload image');
       } finally {
         setUploadingImage(false);
       }
@@ -406,18 +415,18 @@ export default function AdminDashboard() {
         setSalarySlipForm({ period: '', amount: '', notes: '' });
       } else {
         const data = await res.json();
-        alert(data.message || 'Failed to send slip');
+        showToastMsg(data.message || 'Failed to send slip');
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to send salary slip');
+      showToastMsg('Failed to send salary slip');
     }
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newEmployeeId && !/^[a-zA-Z0-9]+$/.test(newEmployeeId)) {
-      alert('Employee ID must be alphanumeric');
+      showToastMsg('Employee ID must be alphanumeric');
       return;
     }
     setCreating(true);
@@ -453,7 +462,7 @@ export default function AdminDashboard() {
         fetchData(); // Refresh user list
       } else {
         const data = await res.json();
-        alert(data.message || 'Failed to create user');
+        showToastMsg(data.message || 'Failed to create user');
       }
     } catch (err) {
       console.error(err);
@@ -470,6 +479,66 @@ export default function AdminDashboard() {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) fetchData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSaveAttendance = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAttendance) return;
+    try {
+      const isNew = editingAttendance._isNew;
+      
+      const payload: any = {
+        status: attendanceEditForm.status,
+        timestamp: new Date(attendanceEditForm.timestamp).toISOString(),
+        workedHours: attendanceEditForm.workedHours ? Number(attendanceEditForm.workedHours) : undefined
+      };
+
+      if (isNew) {
+        payload.userId = editingAttendance.userId;
+      }
+
+      const url = isNew ? `/api/attendance/manual` : `/api/attendance/${editingAttendance._id}`;
+      const method = isNew ? 'POST' : 'PUT';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        setEditingAttendance(null);
+        fetchData();
+        showToastMsg(`Attendance ${isNew ? 'created' : 'updated'} successfully`, 'success');
+      } else {
+        const data = await res.json();
+        showToastMsg(data.message || `Failed to ${isNew ? 'create' : 'update'} attendance`);
+      }
+    } catch (err) {
+      console.error(err);
+      showToastMsg(`Error ${editingAttendance._isNew ? 'creating' : 'updating'} attendance`);
+    }
+  };
+
+  const handleDeleteAttendance = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this attendance record?')) return;
+    try {
+      const res = await fetch(`/api/attendance/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        fetchData();
+        showToastMsg('Attendance record deleted', 'success');
+        setEditingAttendance(null);
+      } else {
+        showToastMsg('Failed to delete record');
+      }
     } catch (err) {
       console.error(err);
     }
@@ -494,11 +563,11 @@ export default function AdminDashboard() {
         setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
       } else {
         const data = await res.json();
-        alert(data.message || 'Failed to update password');
+        showToastMsg(data.message || 'Failed to update password');
       }
     } catch (err) {
       console.error(err);
-      alert('Error updating password');
+      showToastMsg('Error updating password');
     }
   };
 
@@ -528,7 +597,7 @@ export default function AdminDashboard() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
-      alert('Failed to download attendance report');
+      showToastMsg('Failed to download attendance report');
     }
   };
 
@@ -567,11 +636,11 @@ export default function AdminDashboard() {
       const title = `Attendance Report - ${new Date().toLocaleDateString()}`;
       const sheetUrl = await createAndPopulateSheet(accessToken, title, csvData);
       
-      alert(`Successfully synced to Google Sheets!\n\nLink: ${sheetUrl}`);
+      showToastMsg(`Successfully synced to Google Sheets!\n\nLink: ${sheetUrl}`, 'success');
       window.open(sheetUrl, '_blank');
     } catch (err) {
       console.error(err);
-      alert('Error syncing to Google Sheets');
+      showToastMsg('Error syncing to Google Sheets');
     } finally {
       setIsSyncing(false);
     }
@@ -594,7 +663,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (!editingUser) return;
     if (editForm.employeeId && !/^[a-zA-Z0-9]+$/.test(editForm.employeeId)) {
-      alert('Employee ID must be alphanumeric');
+      showToastMsg('Employee ID must be alphanumeric');
       return;
     }
     try {
@@ -617,7 +686,7 @@ export default function AdminDashboard() {
         fetchData();
       } else {
         const data = await res.json();
-        alert(data.message || 'Failed to update user');
+        showToastMsg(data.message || 'Failed to update user');
       }
     } catch (err) {
       console.error(err);
@@ -659,7 +728,7 @@ export default function AdminDashboard() {
        document.body.removeChild(link);
     } catch(err) {
        console.error(err);
-       alert("Failed to download salary report.");
+       showToastMsg("Failed to download salary report.");
     }
   };
 
@@ -700,11 +769,11 @@ export default function AdminDashboard() {
        const title = `Salary Report - ${monthParam}`;
        const sheetUrl = await createAndPopulateSheet(accessToken, title, csvData);
        
-       alert(`Successfully synced Salary Report to Google Sheets!\n\nLink: ${sheetUrl}`);
+       showToastMsg(`Successfully synced Salary Report to Google Sheets!\n\nLink: ${sheetUrl}`, 'success');
        window.open(sheetUrl, '_blank');
     } catch (error) {
        console.error("Salary sync error:", error);
-       alert("Could not sync salary report to Google Sheets");
+       showToastMsg("Could not sync salary report to Google Sheets");
     } finally {
        setIsSyncing(false);
     }
@@ -738,7 +807,7 @@ export default function AdminDashboard() {
         fetchData();
       } else {
         const data = await res.json();
-        alert(data.message || 'Failed to save site');
+        showToastMsg(data.message || 'Failed to save site');
       }
     } catch (err) {
       console.error(err);
@@ -810,7 +879,7 @@ export default function AdminDashboard() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error(err);
-      alert('Failed to download attendance report for this user');
+      showToastMsg('Failed to download attendance report for this user');
     }
   };
 
@@ -843,11 +912,11 @@ export default function AdminDashboard() {
       const title = `${userName} - 30-Day Attendance - ${new Date().toLocaleDateString()}`;
       const sheetUrl = await createAndPopulateSheet(accessToken, title, csvData);
       
-      alert(`Successfully synced ${userName}'s report to Google Sheets!\n\nLink: ${sheetUrl}`);
+      showToastMsg(`Successfully synced ${userName}'s report to Google Sheets!\n\nLink: ${sheetUrl}`, 'success');
       window.open(sheetUrl, '_blank');
     } catch (err) {
       console.error(err);
-      alert('Error syncing user report to Google Sheets');
+      showToastMsg('Error syncing user report to Google Sheets');
     } finally {
       setIsSyncing(false);
     }
@@ -875,6 +944,25 @@ export default function AdminDashboard() {
           >
             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
             <span className="text-sm">{showNotificationToast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {toast.show && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full shadow-lg flex items-center gap-3 font-medium transition-colors ${
+              toast.type === 'error' ? 'bg-red-500/90 text-white' : 
+              toast.type === 'success' ? 'bg-success/90 text-white' : 
+              'bg-card-bg border border-card-border text-text-p'
+            }`}
+          >
+            {toast.type === 'error' && <AlertTriangle className="w-5 h-5 flex-shrink-0" />}
+            {toast.type === 'success' && <CheckCircle className="w-5 h-5 flex-shrink-0" />}
+            <span className="text-sm whitespace-pre-wrap">{toast.message}</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1095,9 +1183,30 @@ export default function AdminDashboard() {
                                 </div>
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-success bg-success/10 px-2 py-0.5 rounded pl-1">
-                              <div className="w-1.5 h-1.5 rounded-full bg-success"></div>
-                              Verified
+                            <div className="flex items-center gap-2">
+                              {record.faceConfidence !== undefined && record.faceConfidence > 0 && record.faceConfidence < 0.65 ? (
+                                <div className="flex items-center gap-1.5 text-[10px] text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded pl-1 border border-orange-400/20" title="Low face recognition confidence">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  Face Mismatch ({(record.faceConfidence * 100).toFixed(0)}%)
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-[10px] text-success bg-success/10 px-2 py-0.5 rounded pl-1">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-success"></div>
+                                  Verified
+                                </div>
+                              )}
+                              {(user?.role === 'admin' || user?.role === 'manager') && (
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-text-s hover:text-accent ml-2" onClick={() => {
+                                  setEditingAttendance(record);
+                                  setAttendanceEditForm({
+                                    status: record.status,
+                                    timestamp: new Date(record.timestamp).toISOString().slice(0, 16),
+                                    workedHours: record.workedHours?.toString() || ''
+                                  });
+                                }}>
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1228,6 +1337,9 @@ export default function AdminDashboard() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Bento: Monthly Attendance Statistics */}
+              <MonthlyAttendanceTable />
 
             </div>
 
@@ -1405,6 +1517,71 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Attendance Edit Modal */}
+      {editingAttendance && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-bg border border-card-border rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between p-6 border-b border-card-border">
+              <h2 className="text-lg font-bold">Edit Attendance Record</h2>
+              <button onClick={() => setEditingAttendance(null)} className="text-text-s hover:text-text-p">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveAttendance} className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Status</label>
+                <select 
+                  className="w-full bg-bg border border-card-border rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-accent outline-none"
+                  value={attendanceEditForm.status}
+                  onChange={(e) => setAttendanceEditForm({...attendanceEditForm, status: e.target.value})}
+                >
+                  <option value="clock-in">Clock In</option>
+                  <option value="clock-out">Clock Out</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-s uppercase tracking-wider">Timestamp</label>
+                <Input 
+                  type="datetime-local" 
+                  value={attendanceEditForm.timestamp}
+                  onChange={(e) => setAttendanceEditForm({...attendanceEditForm, timestamp: e.target.value})}
+                  required 
+                />
+              </div>
+              {attendanceEditForm.status === 'clock-out' && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-text-s uppercase tracking-wider">Worked Hours (Optional)</label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    placeholder="e.g. 8.5"
+                    value={attendanceEditForm.workedHours}
+                    onChange={(e) => setAttendanceEditForm({...attendanceEditForm, workedHours: e.target.value})}
+                  />
+                </div>
+              )}
+              <div className="flex justify-between items-center pt-2">
+                {!editingAttendance._isNew ? (
+                  <Button 
+                    type="button"
+                    variant="ghost" 
+                    className="text-red-500 hover:bg-red-500/10 hover:text-red-600 px-3" 
+                    onClick={() => handleDeleteAttendance(editingAttendance._id)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-1.5" />
+                    Delete
+                  </Button>
+                ) : <div />}
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => setEditingAttendance(null)}>Cancel</Button>
+                  <Button type="submit" className="bg-accent hover:bg-accent/90 text-btn-text">{editingAttendance._isNew ? 'Create Record' : 'Save Changes'}</Button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Password Reset Modal */}
       {passwordResetUser && (
@@ -1665,7 +1842,21 @@ export default function AdminDashboard() {
 
               {selectedUserTab === 'records' && (
                 <div className="space-y-3">
-                  <h4 className="text-xs font-semibold text-text-s uppercase tracking-wider">Full Attendance Log</h4>
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-xs font-semibold text-text-s uppercase tracking-wider">Full Attendance Log</h4>
+                    {(user?.role === 'admin' || user?.role === 'manager') && (
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] bg-accent/10 text-accent hover:bg-accent/20" onClick={() => {
+                        setEditingAttendance({ userId: selectedUser._id, _isNew: true });
+                        setAttendanceEditForm({
+                          status: 'clock-in',
+                          timestamp: new Date().toISOString().slice(0, 16),
+                          workedHours: ''
+                        });
+                      }}>
+                        + Add Record
+                      </Button>
+                    )}
+                  </div>
                   <div className="border border-card-border rounded-xl bg-card-bg/50 divide-y divide-card-border max-h-[300px] overflow-y-auto">
                       {attendance.filter(a => a.userId === selectedUser._id).map((record, i) => (
                         <div key={i} className="flex justify-between items-center p-3 hover:bg-card-border/10 transition-colors">
@@ -1675,11 +1866,31 @@ export default function AdminDashboard() {
                             </p>
                             <p className="text-[11px] text-text-s mt-0.5">{format(new Date(record.timestamp), 'MMM dd, yyyy hh:mm a')}</p>
                           </div>
-                          {record.workedHours !== undefined && (
-                            <div className="text-[11px] font-mono font-bold text-accent bg-accent/10 flex items-center justify-center px-2 py-0.5 rounded border border-accent/20 shadow-sm">
-                              {record.workedHours} hrs
-                            </div>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {record.faceConfidence !== undefined && record.faceConfidence > 0 && record.faceConfidence < 0.65 && (
+                                <div className="text-[10px] text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded border border-orange-400/20 shadow-sm flex items-center gap-1" title="Low face recognition confidence">
+                                  <AlertTriangle className="w-3 h-3" />
+                                  {(record.faceConfidence * 100).toFixed(0)}%
+                                </div>
+                            )}
+                            {record.workedHours !== undefined && (
+                              <div className="text-[11px] font-mono font-bold text-accent bg-accent/10 flex items-center justify-center px-2 py-0.5 rounded border border-accent/20 shadow-sm">
+                                {record.workedHours} hrs
+                              </div>
+                            )}
+                            {(user?.role === 'admin' || user?.role === 'manager') && (
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-text-s hover:text-accent ml-2" onClick={() => {
+                                setEditingAttendance(record);
+                                setAttendanceEditForm({
+                                  status: record.status,
+                                  timestamp: new Date(record.timestamp).toISOString().slice(0, 16),
+                                  workedHours: record.workedHours?.toString() || ''
+                                });
+                              }}>
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       ))}
                       {attendance.filter(a => a.userId === selectedUser._id).length === 0 && (

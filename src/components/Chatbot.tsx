@@ -1,22 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import { MessageCircle, X, Send, Minimize2, Maximize2, Loader2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
-
-let aiClient: GoogleGenAI | null = null;
-
-function getAIClient(): GoogleGenAI {
-  if (!aiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) {
-      throw new Error('GEMINI_API_KEY environment variable is missing.');
-    }
-    aiClient = new GoogleGenAI({ apiKey: key });
-  }
-  return aiClient;
-}
+import { useAuthStore } from '../store';
 
 interface Message {
   role: 'user' | 'model';
@@ -31,29 +18,9 @@ export function Chatbot() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [setupError, setSetupError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Create a chat instance ref so we maintain history
-  const chatRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (isOpen && !chatRef.current && !setupError) {
-      try {
-        const ai = getAIClient();
-        chatRef.current = ai.chats.create({
-          model: 'gemini-3.1-flash-lite-preview',
-          config: {
-            systemInstruction: 'You are a helpful, professional AI assistant for the Glass Fab Attendance and Site Management system. Your role is to help admins and workers understand how to use the dashboard, manage site geofences, and review attendance logs. Keep your answers concise and highly relevant.',
-          }
-        });
-      } catch (err: any) {
-        console.error('AI Initialization error:', err);
-        setSetupError(err.message || 'Failed to initialize AI.');
-        setMessages(prev => [...prev, { role: 'model', text: 'Sorry, the AI is currently unavailable due to missing API keys. Please configure GEMINI_API_KEY.' }]);
-      }
-    }
-  }, [isOpen, setupError]);
+  const token = useAuthStore(state => state.token);
 
   useEffect(() => {
     if (isOpen && !isMinimized) {
@@ -65,31 +32,34 @@ export function Chatbot() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    if (setupError || !chatRef.current) {
-      setMessages(prev => [...prev, { role: 'model', text: 'Chat unavailable. Please check your system configuration.' }]);
-      setInput('');
-      return;
-    }
-
     const userText = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userText }]);
     setIsLoading(true);
 
     try {
-      const streamResponse = await chatRef.current.sendMessageStream({ message: userText });
-      
-      let fullResponse = '';
-      setMessages(prev => [...prev, { role: 'model', text: '' }]);
-      
-      for await (const chunk of streamResponse) {
-        fullResponse += chunk.text;
-        setMessages(prev => {
-          const newM = [...prev];
-          newM[newM.length - 1].text = fullResponse;
-          return newM;
-        });
+      // Create history array omitting the very first greeting if preferred, or just pass all
+      const history = messages.slice(1).map(m => ({
+        role: m.role,
+        parts: [{ text: m.text }]
+      }));
+
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ message: userText, history })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to get response');
       }
+
+      const data = await res.json();
+      setMessages(prev => [...prev, { role: 'model', text: data.text }]);
+      
     } catch (error: any) {
       console.error('Chat error:', error);
       setMessages(prev => [...prev, { role: 'model', text: 'Sorry, I encountered an error. Please try again later.' }]);

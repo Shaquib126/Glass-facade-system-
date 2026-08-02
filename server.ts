@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import cron from 'node-cron';
 import { Resend } from 'resend';
+import { GoogleGenAI } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -186,6 +187,7 @@ const attendanceSchema = new mongoose.Schema({
   timestamp: String,
   offline: Boolean,
   workedHours: Number, // Computed on clock-out
+  faceConfidence: Number, // Stored on check-in
   createdAt: { type: Date, default: Date.now }
 });
 const Attendance = mongoose.model('Attendance', attendanceSchema);
@@ -951,6 +953,67 @@ app.get('/api/reports/salary', authenticateToken, requireAdminOrManager, async (
   }
 });
 
+app.get('/api/reports/monthly-stats', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { month } = req.query; // Format: YYYY-MM
+    let startDate: Date, endDate: Date;
+    
+    if (month) {
+      startDate = new Date(`${month}-01T00:00:00.000Z`);
+      endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else {
+      const now = new Date();
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    const users = await User.find({}, { password: 0 });
+    const attendance = await Attendance.find({
+      timestamp: { $gte: startDate.toISOString(), $lte: endDate.toISOString() }
+    });
+
+    const userStats: Record<string, { daysWorked: Set<string>; totalHours: number; totalOvertime: number }> = {};
+    
+    for (const record of (attendance as any[])) {
+      const uid = record.userId.toString();
+      if (!userStats[uid]) {
+         userStats[uid] = { daysWorked: new Set(), totalHours: 0, totalOvertime: 0 };
+      }
+      
+      if (record.status === 'clock-in') {
+        const dateStr = new Date(record.timestamp).toISOString().split('T')[0];
+        userStats[uid].daysWorked.add(dateStr);
+      } else if (record.status === 'clock-out' && record.workedHours) {
+        userStats[uid].totalHours += record.workedHours;
+        if (record.workedHours > 8) {
+           userStats[uid].totalOvertime += (record.workedHours - 8);
+        }
+      }
+    }
+
+    const report = users.map((u: any) => {
+      const uid = u._id.toString();
+      const stats = userStats[uid] || { daysWorked: new Set(), totalHours: 0, totalOvertime: 0 };
+      const daysWorked = stats.daysWorked.size;
+      return {
+        id: uid,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        employeeId: u.employeeId || 'N/A',
+        daysWorked,
+        totalHours: Number(stats.totalHours.toFixed(2)),
+        totalOvertime: Number(stats.totalOvertime.toFixed(2))
+      };
+    });
+
+    res.json(report);
+  } catch (error) {
+    console.error('Monthly stats report generation error:', error);
+    res.status(500).json({ message: 'Server error generating stats report' });
+  }
+});
+
 app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
   try {
     const { name, currentPassword, newPassword, profilePhoto, mobile } = req.body;
@@ -1109,7 +1172,7 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
 
 app.post('/api/attendance', authenticateToken, async (req: any, res: any) => {
   try {
-    const { status, location, timestamp, offline } = req.body;
+    const { status, location, timestamp, offline, faceConfidence } = req.body;
     
     let isOutsideGeofence = false;
 
@@ -1154,7 +1217,8 @@ app.post('/api/attendance', authenticateToken, async (req: any, res: any) => {
       location, // { lat, lng }
       timestamp: timestamp || new Date().toISOString(),
       offline: !!offline,
-      workedHours
+      workedHours,
+      faceConfidence
     });
 
     if (isOutsideGeofence) {
@@ -1163,6 +1227,17 @@ app.post('/api/attendance', authenticateToken, async (req: any, res: any) => {
         userId: req.user.id,
         userEmail: req.user.email,
         message: `User ${req.user.email} clocked ${status === 'clock-in' ? 'in' : 'out'} outside of designated work sites.`,
+      });
+      io.emit('new_alert', alert);
+    }
+    
+    // Alert if face confidence is unusually low (e.g., between 0.5 and 0.65)
+    if (faceConfidence !== undefined && faceConfidence < 0.65 && faceConfidence > 0) {
+      const alert = await Alert.create({
+        type: 'face_confidence',
+        userId: req.user.id,
+        userEmail: req.user.email,
+        message: `User ${req.user.email} checked in with a low face recognition confidence score of ${(faceConfidence * 100).toFixed(1)}%.`,
       });
       io.emit('new_alert', alert);
     }
@@ -1264,6 +1339,53 @@ app.get('/api/attendance', authenticateToken, requireDashboardAccess, async (req
     res.json(records);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/api/attendance/:id', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { status, timestamp, workedHours } = req.body;
+    const record = await Attendance.findById(req.params.id);
+    if (!record) return res.status(404).json({ message: 'Record not found' });
+
+    record.status = status;
+    if (timestamp) record.timestamp = timestamp;
+    if (workedHours !== undefined) record.workedHours = workedHours;
+
+    await record.save();
+    res.json(record);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating attendance record' });
+  }
+});
+
+app.post('/api/attendance/manual', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    const { userId, status, timestamp, workedHours } = req.body;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    const record = await Attendance.create({
+      userId,
+      userEmail: user.email,
+      status,
+      timestamp: timestamp || new Date().toISOString(),
+      offline: false,
+      workedHours
+    });
+
+    res.status(201).json(record);
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating attendance record' });
+  }
+});
+
+app.delete('/api/attendance/:id', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+  try {
+    await Attendance.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Record deleted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting attendance record' });
   }
 });
 
@@ -1635,6 +1757,42 @@ app.post('/api/salary-slips/send-all', authenticateToken, requireAdminOrManager,
   } catch (error) {
     console.error('Error generating bulk salary slips:', error);
     res.status(500).json({ message: 'Error generating bulk salary slips' });
+  }
+});
+
+// Chatbot API
+let aiClient: GoogleGenAI | null = null;
+function getAIClient(): GoogleGenAI {
+  if (!aiClient) {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      throw new Error('GEMINI_API_KEY environment variable is missing.');
+    }
+    aiClient = new GoogleGenAI({ apiKey: key });
+  }
+  return aiClient;
+}
+
+app.post('/api/chat', authenticateToken, async (req: any, res: any) => {
+  try {
+    const { history, message } = req.body;
+    const ai = getAIClient();
+    const chat = ai.chats.create({
+      model: 'gemini-3.1-pro-preview',
+      config: {
+        systemInstruction: 'You are a helpful, professional AI assistant for the Glass Fab Attendance and Site Management system. Your role is to help admins and workers understand how to use the dashboard, manage site geofences, and review attendance logs. Keep your answers concise and highly relevant.',
+      }
+    });
+    
+    // Convert client history to server format if needed
+    // Actually, we can just send the new message and let the client maintain history
+    // Wait, the client chat object needs history...
+    // With @google/genai, we can pass history in chats.create.
+    const response = await chat.sendMessage({ message });
+    res.json({ text: response.text });
+  } catch (error: any) {
+    console.error('Chat API Error:', error);
+    res.status(500).json({ error: error.message || 'Failed to process chat' });
   }
 });
 

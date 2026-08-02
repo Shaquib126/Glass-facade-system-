@@ -577,6 +577,7 @@ export default function WorkerDashboard() {
         throw new Error('No face detected. Please try again.');
       }
 
+      let faceConfidence = 1; // Default to 1 for first time setup
       // 3. Verify Face
       if (!user?.hasFaceDescriptor) {
         // First time setup
@@ -598,15 +599,17 @@ export default function WorkerDashboard() {
         const storedDescriptor = new Float32Array(Object.values(data.faceDescriptor));
         const { isMatch, distance } = compareDescriptors(descriptor, storedDescriptor);
         
-        console.log(`[WorkerDashboard] Face Verification Distance: ${distance.toFixed(4)}. Confidence: ${(1 - distance).toFixed(4)}.`);
+        faceConfidence = 1 - distance;
+        console.log(`[WorkerDashboard] Face Verification Distance: ${distance.toFixed(4)}. Confidence: ${faceConfidence.toFixed(4)}.`);
         
-        if (!isMatch) throw new Error(`Face verification failed. Confidence: ${(1 - distance).toFixed(2)} (Distance: ${distance.toFixed(2)})`);
+        if (!isMatch) throw new Error(`Face verification failed. Confidence: ${faceConfidence.toFixed(2)} (Distance: ${distance.toFixed(2)})`);
       }
 
       // 4. Record Attendance
       const record = {
         status: actionType,
         location,
+        faceConfidence,
         timestamp: new Date().toISOString(),
       };
 
