@@ -3,7 +3,7 @@ import { useAuthStore, useOfflineStore } from '../store';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
-import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload, RotateCw, RotateCcw, ZoomIn, ZoomOut, Download } from 'lucide-react';
+import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload, RotateCw, RotateCcw, ZoomIn, ZoomOut, Download, Settings } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
 import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -266,14 +266,7 @@ export default function WorkerDashboard() {
   // }, [view, user?.hasFaceDescriptor, enrollStatus]);
 
 
-  useEffect(() => {
-    if (status === 'camera' || enrollStatus === 'camera') {
-      if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
-        videoRef.current.srcObject = streamRef.current;
-        videoRef.current.play().catch(e => console.error('Play error:', e));
-      }
-    }
-  }, [status, enrollStatus, view]);
+
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -487,7 +480,19 @@ export default function WorkerDashboard() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       streamRef.current = stream;
       
-      // Handled by useEffect
+      let attempts = 0;
+      const attachStream = () => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(e => console.error('Play error:', e));
+        } else if (attempts < 50) {
+          attempts++;
+          setTimeout(attachStream, 100);
+        } else {
+          console.error("Video element never mounted");
+        }
+      };
+      attachStream();
     } catch (err) {
       setStatus('error');
       setMessage('Camera access denied');
@@ -508,7 +513,19 @@ export default function WorkerDashboard() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       streamRef.current = stream;
       
-      // Handled by useEffect
+      let attempts = 0;
+      const attachStream = () => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(e => console.error('Play error:', e));
+        } else if (attempts < 50) {
+          attempts++;
+          setTimeout(attachStream, 100);
+        } else {
+          console.error("Video element never mounted");
+        }
+      };
+      attachStream();
     } catch (err) {
       setEnrollStatus('error');
       setEnrollMessage('Camera access denied');
@@ -567,7 +584,7 @@ export default function WorkerDashboard() {
       stopCamera();
       setEnrollStatus('error');
       setEnrollMessage(err.message);
-      setTimeout(() => setEnrollStatus('idle'), 4000);
+      if (!err.message || !err.message.toLowerCase().includes('denied')) { setTimeout(() => setEnrollStatus('idle'), 4000); }
     }
   };
 
@@ -655,7 +672,7 @@ export default function WorkerDashboard() {
       setMessage('Analyzing face...');
       console.log('[handleCapture] Analyzing face...');
       // 2. Get Face Descriptor from the captured canvas
-      const descriptor = await getFaceDescriptor(videoRef.current);
+      const descriptor = await getFaceDescriptor(canvas);
       console.log('[handleCapture] Face descriptor result:', !!descriptor);
       stopCamera();
 
@@ -733,12 +750,18 @@ export default function WorkerDashboard() {
       stopCamera();
       setStatus('error');
       setMessage(err.message || 'An unexpected error occurred');
-      setTimeout(() => setStatus('idle'), 4000);
+      if (!err.message || !err.message.toLowerCase().includes('denied')) { setTimeout(() => setStatus('idle'), 4000); }
     }
   };
 
   return (
     <div className="min-h-screen bg-bg text-text-p flex flex-col">
+      {status === 'error' && message.toLowerCase().includes('denied') && (
+        <PermissionInstructions message={message} onClose={() => setStatus('idle')} />
+      )}
+      {enrollStatus === 'error' && enrollMessage.toLowerCase().includes('denied') && (
+        <PermissionInstructions message={enrollMessage} onClose={() => setEnrollStatus('idle')} />
+      )}
       <header className="p-6 flex justify-between items-center border-b border-card-border bg-card-bg backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center gap-4">
           {(user as any)?.profilePhoto ? (
