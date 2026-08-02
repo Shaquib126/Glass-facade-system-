@@ -265,6 +265,16 @@ export default function WorkerDashboard() {
   //   }
   // }, [view, user?.hasFaceDescriptor, enrollStatus]);
 
+
+  useEffect(() => {
+    if (status === 'camera' || enrollStatus === 'camera') {
+      if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        videoRef.current.play().catch(e => console.error('Play error:', e));
+      }
+    }
+  }, [status, enrollStatus, view]);
+
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -477,14 +487,7 @@ export default function WorkerDashboard() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       streamRef.current = stream;
       
-      const attachStream = () => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        } else {
-          setTimeout(attachStream, 50);
-        }
-      };
-      attachStream();
+      // Handled by useEffect
     } catch (err) {
       setStatus('error');
       setMessage('Camera access denied');
@@ -505,14 +508,7 @@ export default function WorkerDashboard() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       streamRef.current = stream;
       
-      const attachStream = () => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        } else {
-          setTimeout(attachStream, 50);
-        }
-      };
-      attachStream();
+      // Handled by useEffect
     } catch (err) {
       setEnrollStatus('error');
       setEnrollMessage('Camera access denied');

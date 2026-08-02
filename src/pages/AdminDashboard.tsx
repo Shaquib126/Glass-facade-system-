@@ -11,6 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { googleSignIn, getAccessToken } from '../lib/firebase';
 import { createAndPopulateSheet } from '../lib/googleSheets';
 import { MonthlyAttendanceTable } from '../components/MonthlyAttendanceTable';
+import { MapTab } from '../components/MapTab';
 
 const UserAutocomplete = ({ users, value, onChange }: { users: any[], value: string, onChange: (val: string) => void }) => {
   const [search, setSearch] = useState('');
@@ -1515,6 +1516,19 @@ export default function AdminDashboard() {
 
             </div>
           </div>
+
+          {/* Map View */}
+          <div className="mt-6">
+            <Card className="flex flex-col shadow-sm border-card-border overflow-hidden">
+              <CardHeader className="pb-3 border-b border-card-border/50 bg-card-bg">
+                <CardTitle>Map View: Geofences & Worker Check-ins</CardTitle>
+              </CardHeader>
+              <div className="p-0">
+                <MapTab sites={sites} attendance={attendance} users={users} />
+              </div>
+            </Card>
+          </div>
+
         </div>
       </div>
 

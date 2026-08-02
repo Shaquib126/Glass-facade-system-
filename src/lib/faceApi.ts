@@ -32,7 +32,7 @@ export const getFaceDescriptor = async (mediaEl: HTMLVideoElement | HTMLCanvasEl
   if (!modelsLoaded) await loadModels();
   
   const detectionPromise = faceapi
-    .detectSingleFace(mediaEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
+    .detectSingleFace(mediaEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
     .withFaceLandmarks()
     .withFaceDescriptor();
 
