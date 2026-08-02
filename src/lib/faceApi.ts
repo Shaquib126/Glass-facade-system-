@@ -10,11 +10,17 @@ let modelsLoaded = false;
 export const loadModels = async () => {
   if (modelsLoaded) return;
   try {
-    await Promise.all([
+    const loadPromise = Promise.all([
       faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
       faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
       faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
     ]);
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Face models load timeout')), 15000);
+    });
+
+    await Promise.race([loadPromise, timeoutPromise]);
     modelsLoaded = true;
   } catch (error) {
     console.error('Error loading face-api models:', error);
@@ -25,10 +31,16 @@ export const loadModels = async () => {
 export const getFaceDescriptor = async (mediaEl: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement) => {
   if (!modelsLoaded) await loadModels();
   
-  const detection = await faceapi
+  const detectionPromise = faceapi
     .detectSingleFace(mediaEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
     .withFaceLandmarks()
     .withFaceDescriptor();
+
+  const timeoutPromise = new Promise<undefined>((_, reject) => {
+    setTimeout(() => reject(new Error('Face detection timed out')), 10000);
+  });
+
+  const detection = await Promise.race([detectionPromise, timeoutPromise]) as any;
     
   return detection?.descriptor;
 };

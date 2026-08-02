@@ -522,13 +522,16 @@ export default function WorkerDashboard() {
     }
 
     setStatus('processing');
-    setMessage('Verifying identity and location...');
+    setMessage('Verifying location...');
+    console.log('[handleCapture] Started');
 
     try {
       // 1. Get Location
       let location;
       try {
+        console.log('[handleCapture] Requesting location...');
         location = await getCurrentLocation();
+        console.log('[handleCapture] Got location:', location);
         
         if (sites.length === 0) {
           throw new Error('No active sites configured by admin.');
@@ -546,6 +549,8 @@ export default function WorkerDashboard() {
           }
         }
 
+        console.log(`[handleCapture] Nearest site distance: ${closestDistance}m. isWithinAnySite: ${isWithinAnySite}`);
+
         if (!isWithinAnySite) {
           fetch('/api/alerts', {
              method: 'POST',
@@ -556,6 +561,7 @@ export default function WorkerDashboard() {
           throw new Error(`Too far from any site (Closest is ${Math.round(closestDistance)}m away)`);
         }
       } catch (geoErr: any) {
+        console.error('[handleCapture] Location error:', geoErr);
         throw new Error(geoErr.message || 'Location verification failed');
       }
 
@@ -569,8 +575,11 @@ export default function WorkerDashboard() {
           }).catch(console.error);
       }
 
+      setMessage('Analyzing face...');
+      console.log('[handleCapture] Analyzing face...');
       // 2. Get Face Descriptor from the captured canvas
       const descriptor = await getFaceDescriptor(canvas);
+      console.log('[handleCapture] Face descriptor result:', !!descriptor);
       stopCamera();
 
       if (!descriptor) {
@@ -634,9 +643,10 @@ export default function WorkerDashboard() {
       setTimeout(() => setStatus('idle'), 3000);
 
     } catch (err: any) {
+      console.error('[handleCapture] Global error:', err);
       stopCamera();
       setStatus('error');
-      setMessage(err.message);
+      setMessage(err.message || 'An unexpected error occurred');
       setTimeout(() => setStatus('idle'), 4000);
     }
   };

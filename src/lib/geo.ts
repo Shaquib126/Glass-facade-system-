@@ -2,20 +2,43 @@ export const getCurrentLocation = (): Promise<{ lat: number; lng: number }> => {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Geolocation is not supported by your browser'));
-    } else {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
+      return;
+    } 
+
+    let resolved = false;
+
+    // Custom timeout fallback since some mobile browsers don't respect the timeout option
+    const fallbackTimeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error('Location request timed out. Please check your device location settings.'));
+      }
+    }, 15000);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(fallbackTimeout);
           resolve({
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           });
-        },
-        (error) => {
-          reject(error);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
+        }
+      },
+      (error) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(fallbackTimeout);
+          if (error.code === error.PERMISSION_DENIED) {
+            reject(new Error('Location permission denied. Please allow location access to clock in.'));
+          } else {
+            reject(error);
+          }
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   });
 };
 
