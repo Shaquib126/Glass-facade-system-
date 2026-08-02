@@ -476,9 +476,15 @@ export default function WorkerDashboard() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      
+      const attachStream = () => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        } else {
+          setTimeout(attachStream, 50);
+        }
+      };
+      attachStream();
     } catch (err) {
       setStatus('error');
       setMessage('Camera access denied');
@@ -498,9 +504,15 @@ export default function WorkerDashboard() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      
+      const attachStream = () => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        } else {
+          setTimeout(attachStream, 50);
+        }
+      };
+      attachStream();
     } catch (err) {
       setEnrollStatus('error');
       setEnrollMessage('Camera access denied');
@@ -511,18 +523,33 @@ export default function WorkerDashboard() {
     if (!videoRef.current) return;
 
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    const MAX_DIMENSION = 640;
+    let width = videoRef.current.videoWidth;
+    let height = videoRef.current.videoHeight;
+    
+    if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+      if (width > height) {
+        height = Math.round((height * MAX_DIMENSION) / width);
+        width = MAX_DIMENSION;
+      } else {
+        width = Math.round((width * MAX_DIMENSION) / height);
+        height = MAX_DIMENSION;
+      }
+    }
+    
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(videoRef.current, 0, 0, width, height);
     }
 
     setEnrollStatus('processing');
     setEnrollMessage('Scanning face...');
 
     try {
-      const descriptor = await getFaceDescriptor(canvas);
+      if (!width || !height) throw new Error('Camera not fully initialized. Please try again.');
+      const descriptor = await getFaceDescriptor(videoRef.current);
       stopCamera();
 
       if (!descriptor) {
@@ -553,11 +580,25 @@ export default function WorkerDashboard() {
 
     // Capture the current frame to a canvas before unmounting the video element
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    const MAX_DIMENSION = 640;
+    let width = videoRef.current.videoWidth;
+    let height = videoRef.current.videoHeight;
+    
+    if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+      if (width > height) {
+        height = Math.round((height * MAX_DIMENSION) / width);
+        width = MAX_DIMENSION;
+      } else {
+        width = Math.round((width * MAX_DIMENSION) / height);
+        height = MAX_DIMENSION;
+      }
+    }
+    
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(videoRef.current, 0, 0, width, height);
     }
 
     setStatus('processing');
@@ -565,6 +606,7 @@ export default function WorkerDashboard() {
     console.log('[handleCapture] Started');
 
     try {
+      if (!width || !height) throw new Error('Camera not fully initialized. Please try again.');
       // 1. Get Location
       let location;
       try {
@@ -617,7 +659,7 @@ export default function WorkerDashboard() {
       setMessage('Analyzing face...');
       console.log('[handleCapture] Analyzing face...');
       // 2. Get Face Descriptor from the captured canvas
-      const descriptor = await getFaceDescriptor(canvas);
+      const descriptor = await getFaceDescriptor(videoRef.current);
       console.log('[handleCapture] Face descriptor result:', !!descriptor);
       stopCamera();
 

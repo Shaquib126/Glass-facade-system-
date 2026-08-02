@@ -37,7 +37,7 @@ export const getFaceDescriptor = async (mediaEl: HTMLVideoElement | HTMLCanvasEl
     .withFaceDescriptor();
 
   const timeoutPromise = new Promise<undefined>((_, reject) => {
-    setTimeout(() => reject(new Error('Face detection taking longer than expected. Please ensure your face is clearly visible and well-lit.')), 30000);
+    setTimeout(() => reject(new Error('Face detection taking longer than expected. Please ensure your face is clearly visible and well-lit.')), 60000);
   });
 
   const detection = await Promise.race([detectionPromise, timeoutPromise]) as any;
