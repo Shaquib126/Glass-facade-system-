@@ -256,7 +256,7 @@ async function seedAdmin() {
             name: 'Admin User'
           } 
         }, 
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
       console.log(`Admin user ensured: ${adminEmail} / admin123`);
     } catch (upsertErr: any) {
@@ -361,7 +361,7 @@ app.get('/api/alerts', authenticateToken, requireDashboardAccess, async (req: an
 
 app.put('/api/alerts/:id/read', authenticateToken, requireDashboardAccess, async (req: any, res: any) => {
   try {
-    const alert = await Alert.findByIdAndUpdate(req.params.id, { read: true }, { new: true });
+    const alert = await Alert.findByIdAndUpdate(req.params.id, { read: true }, { returnDocument: 'after' });
     res.json(alert);
   } catch(e) {
     res.status(500).json({message: 'Server error'});
@@ -1001,9 +1001,11 @@ app.get('/api/reports/monthly-stats', authenticateToken, requireAdminOrManager, 
         email: u.email,
         role: u.role,
         employeeId: u.employeeId || 'N/A',
+        dailyWage: u.dailyWage || 0,
         daysWorked,
         totalHours: Number(stats.totalHours.toFixed(2)),
-        totalOvertime: Number(stats.totalOvertime.toFixed(2))
+        totalOvertime: Number(stats.totalOvertime.toFixed(2)),
+        estimatedSalary: daysWorked * (u.dailyWage || 0)
       };
     });
 
@@ -1069,7 +1071,7 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, async (req: any, res:
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       { name, email, role, dailyWage, ottHours, mobile, employeeId },
-      { new: true, select: '-password' }
+      { returnDocument: 'after', select: '-password' }
     );
     if (!updatedUser) {
       return res.status(404).json({ message: 'User not found' });
@@ -1115,7 +1117,7 @@ app.put('/api/sites/:id', authenticateToken, requireAdminOrManager, async (req: 
     const updatedSite = await Site.findByIdAndUpdate(
       req.params.id,
       { name, lat, lng, radius },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!updatedSite) return res.status(404).json({ message: 'Site not found' });
     res.json(updatedSite);

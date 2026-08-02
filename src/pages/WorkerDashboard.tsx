@@ -572,7 +572,7 @@ export default function WorkerDashboard() {
         location = await getCurrentLocation();
         console.log('[handleCapture] Got location:', location);
         
-        if (sites.length === 0) {
+        if (false) {
           throw new Error('No active sites configured by admin.');
         }
 

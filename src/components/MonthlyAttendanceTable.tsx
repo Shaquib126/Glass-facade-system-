@@ -12,9 +12,11 @@ interface MonthlyStats {
   email: string;
   role: string;
   employeeId: string;
+  dailyWage: number;
   daysWorked: number;
   totalHours: number;
   totalOvertime: number;
+  estimatedSalary: number;
 }
 
 export function MonthlyAttendanceTable() {
@@ -54,7 +56,7 @@ export function MonthlyAttendanceTable() {
 
   const getCsvContent = () => {
     if (!stats || stats.length === 0) return null;
-    const headers = ["Employee ID", "Name", "Email", "Role", "Days Worked", "Total Hours", "Total Overtime"];
+    const headers = ["Employee ID", "Name", "Email", "Role", "Days Worked", "Total Hours", "Total Overtime", "Daily Wage", "Est. Salary"];
     const rows = stats.map(s => [
       `"${s.employeeId || 'N/A'}"`,
       `"${s.name || ''}"`,
@@ -62,7 +64,9 @@ export function MonthlyAttendanceTable() {
       s.role,
       s.daysWorked,
       s.totalHours,
-      s.totalOvertime
+      s.totalOvertime,
+      s.dailyWage,
+      s.estimatedSalary
     ]);
     return [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
   };
@@ -113,11 +117,13 @@ export function MonthlyAttendanceTable() {
     setSelectedMonth(e.target.value);
   };
 
+  const totalPayrollEstimate = stats.reduce((acc, curr) => acc + (curr.estimatedSalary || 0), 0);
+
   return (
     <Card className="flex flex-col shadow-sm max-h-[500px]">
-      <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-card-border/50">
-        <div className="flex items-center gap-3">
-          <CardTitle>Monthly Attendance Statistics</CardTitle>
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-card-border/50 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <CardTitle>Monthly Attendance & Salary Estimator</CardTitle>
           <div className="flex items-center gap-2 bg-bg border border-card-border rounded-md px-2 h-8 focus-within:ring-1 focus-within:ring-accent/20 focus-within:border-accent/40 transition-shadow">
             <Calendar className="w-4 h-4 text-text-s" />
             <input 
@@ -128,13 +134,19 @@ export function MonthlyAttendanceTable() {
             />
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={syncToSheets} disabled={isSyncing} className="h-8 px-3 text-[10px] text-success hover:bg-success/10 border-success/30 shadow-sm" title="Sync to Sheets">
-            <FileText className="w-3.5 h-3.5 mr-1.5" /> {isSyncing ? 'SYNCING...' : 'SYNC'}
-          </Button>
-          <Button variant="outline" size="sm" onClick={downloadCSV} className="h-8 px-3 text-[10px] text-text-p hover:text-accent hover:border-accent/50 shadow-sm" title="Download CSV">
-            <Download className="w-3.5 h-3.5 mr-1.5" /> EXPORT
-          </Button>
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] text-text-s uppercase tracking-wider font-semibold">Total Est. Payroll</span>
+            <span className="text-sm font-bold text-success">₹{totalPayrollEstimate.toLocaleString()}</span>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={syncToSheets} disabled={isSyncing} className="h-8 px-3 text-[10px] text-success hover:bg-success/10 border-success/30 shadow-sm" title="Sync to Sheets">
+              <FileText className="w-3.5 h-3.5 mr-1.5" /> {isSyncing ? 'SYNCING...' : 'SYNC'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={downloadCSV} className="h-8 px-3 text-[10px] text-text-p hover:text-accent hover:border-accent/50 shadow-sm" title="Download CSV">
+              <Download className="w-3.5 h-3.5 mr-1.5" /> EXPORT
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto px-0 py-0">
@@ -156,12 +168,13 @@ export function MonthlyAttendanceTable() {
                   <th className="px-6 py-3 text-xs font-semibold text-text-s uppercase tracking-wider text-right">Days Worked</th>
                   <th className="px-6 py-3 text-xs font-semibold text-text-s uppercase tracking-wider text-right">Total Hours</th>
                   <th className="px-6 py-3 text-xs font-semibold text-text-s uppercase tracking-wider text-right">Overtime</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-text-s uppercase tracking-wider text-right">Est. Salary</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-card-border">
                 {stats.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-text-s">No statistics available for this month.</td>
+                    <td colSpan={6} className="px-6 py-8 text-center text-text-s">No statistics available for this month.</td>
                   </tr>
                 ) : (
                   stats.map((s, i) => (
@@ -185,6 +198,10 @@ export function MonthlyAttendanceTable() {
                       </td>
                       <td className="px-6 py-3 text-right text-orange-500">
                         {s.totalOvertime > 0 ? `${s.totalOvertime}h` : '-'}
+                      </td>
+                      <td className="px-6 py-3 text-right font-semibold text-success">
+                        ₹{s.estimatedSalary.toLocaleString()}
+                        {s.dailyWage > 0 && <span className="block text-[10px] text-text-s font-normal">₹{s.dailyWage}/day</span>}
                       </td>
                     </tr>
                   ))
