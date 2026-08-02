@@ -146,6 +146,12 @@ export default function WorkerDashboard() {
     fetchHistory();
     fetchSites();
     fetchSlips();
+    
+    const handleOnline = () => {
+      syncOfflineData();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
   }, []);
 
   useEffect(() => {
@@ -282,6 +288,27 @@ export default function WorkerDashboard() {
       if (croppedImageBase64) {
         setEditPhoto(croppedImageBase64);
         
+        let faceDescriptorArray: number[] | undefined;
+        try {
+          const img = new Image();
+          img.src = croppedImageBase64;
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+          const descriptor = await getFaceDescriptor(img);
+          if (descriptor) {
+            faceDescriptorArray = Array.from(descriptor);
+          }
+        } catch (err) {
+          console.warn('Failed to extract face descriptor from uploaded photo', err);
+        }
+
+        const payload: any = { profilePhoto: croppedImageBase64 };
+        if (faceDescriptorArray) {
+          payload.faceDescriptor = faceDescriptorArray;
+        }
+        
         // Automatically save the cropped photo
         const res = await fetch('/api/users/me', {
           method: 'PUT',
@@ -289,15 +316,18 @@ export default function WorkerDashboard() {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({ profilePhoto: croppedImageBase64 })
+          body: JSON.stringify(payload)
         });
         
         if (res.ok) {
            let data;
            const text = await res.text();
            try { data = JSON.parse(text); } catch (e) { data = null; }
-           if (data) updateUser(data);
-           setProfileMessage('Profile photo updated successfully');
+           if (data) {
+             updateUser(data);
+             if (faceDescriptorArray) updateUser({ hasFaceDescriptor: true });
+           }
+           setProfileMessage('Profile photo updated successfully' + (faceDescriptorArray ? ' and face recognition data updated.' : ''));
         } else {
            let errMsg = 'Failed to save profile photo';
            try {
@@ -409,7 +439,13 @@ export default function WorkerDashboard() {
         return;
       }
       if (res.ok) {
-        setHistory(await res.json());
+        const serverHistory = await res.json();
+        // Merge with current queue for offline optimistic UI
+        const queueIds = new Set(queue.map((q: any) => q.timestamp));
+        const merged = [...queue, ...serverHistory.filter((h: any) => !queueIds.has(h.timestamp))].sort(
+          (a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+        setHistory(merged);
       }
     } catch (e) {
       console.error('Failed to fetch history', e);
@@ -424,7 +460,10 @@ export default function WorkerDashboard() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ records: queue }),
       });
-      if (res.ok) clearQueue();
+      if (res.ok) {
+        clearQueue();
+        fetchHistory();
+      }
     } catch (e) {
       console.error('Sync failed', e);
     }
@@ -623,16 +662,25 @@ export default function WorkerDashboard() {
       };
 
       if (navigator.onLine) {
-        const attRes = await fetch('/api/attendance', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify(record),
-        });
-        if (!attRes.ok) throw new Error('Failed to record attendance');
-        
-        // Optimistic update for instant UI feedback
-        setHistory(prev => [record, ...prev]);
-        fetchHistory(); // Refresh history with server IDs
+        try {
+          const attRes = await fetch('/api/attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(record),
+          });
+          if (!attRes.ok) throw new Error('Failed to record attendance');
+          
+          // Optimistic update for instant UI feedback
+          setHistory(prev => [record, ...prev]);
+          fetchHistory(); // Refresh history with server IDs
+        } catch (fetchErr: any) {
+          if (fetchErr.message === 'Failed to fetch' || fetchErr.name === 'TypeError') {
+            addToQueue(record);
+            setHistory(prev => [record, ...prev]);
+          } else {
+            throw fetchErr;
+          }
+        }
       } else {
         addToQueue(record);
         setHistory(prev => [record, ...prev]); // optimistic update

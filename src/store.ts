@@ -1,5 +1,19 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, StateStorage, createJSONStorage } from 'zustand/middleware';
+import { get, set, del } from 'idb-keyval';
+
+// Custom storage object using idb-keyval for IndexedDB
+const idbStorage: StateStorage = {
+  getItem: async (name: string): Promise<string | null> => {
+    return (await get(name)) || null;
+  },
+  setItem: async (name: string, value: string): Promise<void> => {
+    await set(name, value);
+  },
+  removeItem: async (name: string): Promise<void> => {
+    await del(name);
+  },
+};
 
 interface AuthState {
   token: string | null;
@@ -26,6 +40,7 @@ interface OfflineState {
   queue: any[];
   addToQueue: (record: any) => void;
   clearQueue: () => void;
+  removeFromQueue: (recordId: string) => void;
 }
 
 export const useOfflineStore = create<OfflineState>()(
@@ -34,7 +49,11 @@ export const useOfflineStore = create<OfflineState>()(
       queue: [],
       addToQueue: (record) => set((state) => ({ queue: [...state.queue, record] })),
       clearQueue: () => set({ queue: [] }),
+      removeFromQueue: (recordId) => set((state) => ({ queue: state.queue.filter((r: any) => r.id !== recordId && r.timestamp !== recordId) })),
     }),
-    { name: 'glass-facade-offline' }
+    { 
+      name: 'glass-facade-offline',
+      storage: createJSONStorage(() => idbStorage)
+    }
   )
 );

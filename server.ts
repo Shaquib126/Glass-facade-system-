@@ -433,8 +433,8 @@ app.post('/api/auth/login-face', async (req: any, res: any) => {
     }
 
     const distance = euclideanDistance(faceDescriptor, user.faceDescriptor);
-    console.log(`[Face Verification] Distance for ${email}: ${distance.toFixed(4)} (Threshold: 0.5)`);
-    if (distance > 0.5) { // 0.5 is a standard strict threshold for face-api.js
+    console.log(`[Face Verification] Distance for ${email}: ${distance.toFixed(4)} (Threshold: 0.55)`);
+    if (distance > 0.55) { // 0.55 is a standard strict threshold for face-api.js
       return res.status(401).json({ message: `Face verification failed. Confidence score: ${(1 - distance).toFixed(2)} (Distance: ${distance.toFixed(2)})`, distance });
     }
 
@@ -1016,7 +1016,7 @@ app.get('/api/reports/monthly-stats', authenticateToken, requireAdminOrManager, 
 
 app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
   try {
-    const { name, currentPassword, newPassword, profilePhoto, mobile } = req.body;
+    const { name, currentPassword, newPassword, profilePhoto, mobile, faceDescriptor } = req.body;
     const user: any = await User.findById(req.user.id);
     
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -1024,6 +1024,7 @@ app.put('/api/users/me', authenticateToken, async (req: any, res: any) => {
     if (name) user.name = name;
     if (profilePhoto) user.profilePhoto = profilePhoto;
     if (mobile !== undefined) user.mobile = mobile;
+    if (faceDescriptor !== undefined) user.faceDescriptor = faceDescriptor;
 
     if (newPassword) {
       if (!currentPassword) {
