@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 const API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(API_KEY) && API_KEY !== 'YOUR_API_KEY';
 
-function MarkerWithInfoWindow({ record, children }: { record: any, children?: React.ReactNode }) {
+function MarkerWithInfoWindow({ record, children }: { record: any, children?: React.ReactNode, key?: any }) {
   const [markerRef, marker] = useAdvancedMarkerRef();
   const [open, setOpen] = useState(false);
 
@@ -29,7 +29,7 @@ function MarkerWithInfoWindow({ record, children }: { record: any, children?: Re
 }
 
 // Circle component to draw geofences using standard Google Maps JS API since @vis.gl doesn't have a specific <Circle> component yet
-const MapCircle = ({ center, radius, color = '#2563eb' }: { center: google.maps.LatLngLiteral, radius: number, color?: string }) => {
+const MapCircle = ({ center, radius, color = '#2563eb' }: { center: google.maps.LatLngLiteral, radius: number, color?: string, key?: any }) => {
   const map = require('@vis.gl/react-google-maps').useMap();
   const circleRef = React.useRef<google.maps.Circle | null>(null);
 

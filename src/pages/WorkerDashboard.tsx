@@ -92,6 +92,49 @@ export const getCroppedImg = async (imageSrc: string, pixelCrop: any, rotation =
   return canvas.toDataURL('image/jpeg', 0.82);
 };
 
+const PermissionInstructions = ({ message, onClose }: { message: string; onClose: () => void }) => {
+  if (!message.toLowerCase().includes('denied')) return null;
+
+  const isLocation = message.toLowerCase().includes('location');
+  const type = isLocation ? 'Location' : 'Camera';
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+      <div className="bg-card-bg w-full max-w-md rounded-2xl shadow-xl overflow-hidden border border-card-border flex flex-col">
+        <div className="p-6 flex-1">
+          <div className="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-4 mx-auto">
+            <Settings className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold mb-2 text-text-p text-center">Allow Access</h2>
+          <p className="text-sm text-text-s mb-6 text-center">
+            {message}
+          </p>
+
+          <div className="space-y-4 bg-bg p-4 rounded-xl border border-card-border">
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-6 h-6 bg-accent/10 text-accent rounded-full flex items-center justify-center font-bold text-xs mt-0.5">1</div>
+              <p className="text-sm text-text-p">Tap the <strong>lock icon</strong> (🔒) or <strong>tune icon</strong> in your browser address bar.</p>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-6 h-6 bg-accent/10 text-accent rounded-full flex items-center justify-center font-bold text-xs mt-0.5">2</div>
+              <p className="text-sm text-text-p">Select <strong>Permissions</strong> or <strong>Site settings</strong>.</p>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-shrink-0 w-6 h-6 bg-accent/10 text-accent rounded-full flex items-center justify-center font-bold text-xs mt-0.5">3</div>
+              <p className="text-sm text-text-p">Turn on the switch for <strong>{type}</strong>.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-card-bg border-t border-card-border flex gap-3 mt-auto">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Close</Button>
+          <Button className="flex-1 bg-accent hover:bg-accent/90 text-btn-text font-bold" onClick={() => window.location.reload()}>Reload Page</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function WorkerDashboard() {
   const { user, token, logout, updateUser } = useAuthStore();
   const { addToQueue, queue, clearQueue } = useOfflineStore();
@@ -135,6 +178,7 @@ export default function WorkerDashboard() {
   };
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraFileInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
@@ -472,12 +516,42 @@ export default function WorkerDashboard() {
     }
   };
 
+  
+  const getCameraStream = async () => {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    } catch (e) {
+      console.warn('[Camera] facingMode user failed, trying default video constraint:', e);
+      try {
+        return await navigator.mediaDevices.getUserMedia({ video: true });
+      } catch (e2) {
+        console.error('[Camera] generic video constraint failed:', e2);
+        throw e2;
+      }
+    }
+  };
+
+  useEffect(() => {
+    if ((status === 'camera' || enrollStatus === 'camera') && streamRef.current && videoRef.current) {
+      const video = videoRef.current;
+      video.muted = true;
+      video.playsInline = true;
+      if (video.srcObject !== streamRef.current) {
+        video.srcObject = streamRef.current;
+      }
+      video.onloadedmetadata = () => {
+        video.play().catch(err => console.error('[Camera] Play on metadata error:', err));
+      };
+      video.play().catch(err => console.error('[Camera] Immediate play error:', err));
+    }
+  }, [status, enrollStatus, view]);
+
   const startCamera = async (type: 'clock-in' | 'clock-out') => {
     setActionType(type);
     setStatus('camera');
     setMessage('Position your face in the frame');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      const stream = await getCameraStream();
       streamRef.current = stream;
       
       let attempts = 0;
@@ -510,7 +584,7 @@ export default function WorkerDashboard() {
     setEnrollStatus('camera');
     setEnrollMessage('Position your face in the frame');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      const stream = await getCameraStream();
       streamRef.current = stream;
       
       let attempts = 0;
@@ -534,6 +608,13 @@ export default function WorkerDashboard() {
 
   const handleEnrollCapture = async () => {
     if (!videoRef.current) return;
+    let video = videoRef.current;
+    let attempts = 0;
+    while ((!video.videoWidth || !video.videoHeight) && attempts < 15) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
+      video = videoRef.current || video;
+    }
 
     const canvas = document.createElement('canvas');
     const MAX_DIMENSION = 640;
@@ -586,6 +667,131 @@ export default function WorkerDashboard() {
       setEnrollMessage(err.message);
       if (!err.message || !err.message.toLowerCase().includes('denied')) { setTimeout(() => setEnrollStatus('idle'), 4000); }
     }
+  };
+
+  
+  const processCapturedCanvas = async (canvas: HTMLCanvasElement) => {
+    setStatus('processing');
+    setMessage('Verifying location...');
+    try {
+      let location;
+      try {
+        location = await getCurrentLocation();
+        let isWithinAnySite = false;
+        let closestDistance = Infinity;
+        for (const site of sites) {
+          const distance = getDistance(location.lat, location.lng, site.lat, site.lng);
+          if (distance < closestDistance) closestDistance = distance;
+          if (distance <= site.radius) {
+            isWithinAnySite = true;
+            break;
+          }
+        }
+        if (!isWithinAnySite) {
+          fetch('/api/alerts', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+             body: JSON.stringify({ type: 'geo-breach', message: `Geo-fence breach attempt: Worker tried to clock ${actionType} outside active site bounds (Nearest was ${Math.round(closestDistance)}m away).` })
+          }).catch(console.error);
+          throw new Error(`Too far from any site (Closest is ${Math.round(closestDistance)}m away)`);
+        }
+      } catch (geoErr: any) {
+        throw new Error(geoErr.message || 'Location verification failed');
+      }
+
+      setMessage('Analyzing face...');
+      const descriptor = await getFaceDescriptor(canvas);
+      stopCamera();
+
+      if (!descriptor) {
+        throw new Error('No face detected in photo. Please try again with clear lighting.');
+      }
+
+      let faceConfidence = 1;
+      if (!user?.hasFaceDescriptor) {
+        const res = await fetch('/api/users/me/descriptor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ faceDescriptor: Array.from(descriptor) }),
+        });
+        if (!res.ok) throw new Error('Failed to save face profile');
+        updateUser({ hasFaceDescriptor: true });
+      } else {
+        const res = await fetch('/api/users/me/descriptor', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error('Failed to fetch face profile');
+        const storedDescriptor = new Float32Array(Object.values(data.faceDescriptor));
+        const { isMatch, distance } = compareDescriptors(descriptor, storedDescriptor);
+        faceConfidence = 1 - distance;
+        if (!isMatch) throw new Error(`Face verification failed. Confidence: ${faceConfidence.toFixed(2)}`);
+      }
+
+      const record = {
+        status: actionType,
+        location,
+        faceConfidence,
+        timestamp: new Date().toISOString(),
+      };
+
+      if (navigator.onLine) {
+        try {
+          const attRes = await fetch('/api/attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(record),
+          });
+          if (!attRes.ok) throw new Error('Failed to record attendance');
+          setHistory(prev => [record, ...prev]);
+          fetchHistory();
+        } catch (fetchErr: any) {
+          addToQueue(record);
+          setHistory(prev => [record, ...prev]);
+        }
+      } else {
+        addToQueue(record);
+        setHistory(prev => [record, ...prev]);
+      }
+      setStatus('success');
+      setMessage(`Successfully ${actionType === 'clock-in' ? 'Clocked In' : 'Clocked Out'}`);
+      setTimeout(() => setStatus('idle'), 3000);
+    } catch (err: any) {
+      stopCamera();
+      setStatus('error');
+      setMessage(err.message || 'An unexpected error occurred');
+      if (!err.message || !err.message.toLowerCase().includes('denied')) {
+        setTimeout(() => setStatus('idle'), 4000);
+      }
+    }
+  };
+
+  const handleCameraFallbackFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 640;
+        let w = img.width;
+        let h = img.height;
+        if (w > MAX_DIM || h > MAX_DIM) {
+          if (w > h) { h = Math.round((h * MAX_DIM) / w); w = MAX_DIM; }
+          else { w = Math.round((w * MAX_DIM) / h); h = MAX_DIM; }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) ctx.drawImage(img, 0, 0, w, h);
+        processCapturedCanvas(canvas);
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleCapture = async () => {
@@ -1313,9 +1519,9 @@ export default function WorkerDashboard() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="flex flex-col items-center space-y-6"
+              className="flex flex-col items-center space-y-4"
             >
-              <div className="relative w-full aspect-[3/4] max-w-sm rounded-3xl overflow-hidden bg-black border border-card-border">
+              <div className="relative w-full aspect-[3/4] max-w-sm rounded-3xl overflow-hidden bg-black border border-card-border shadow-lg">
                 <video
                   ref={videoRef}
                   autoPlay
@@ -1328,15 +1534,50 @@ export default function WorkerDashboard() {
                   <div className="w-48 h-64 border-2 border-dashed border-white/50 rounded-full" />
                 </div>
               </div>
-              <p className="text-center text-text-s">{message}</p>
-              <div className="flex gap-4 w-full max-w-sm">
-                <Button variant="outline" className="flex-1" onClick={() => { stopCamera(); setStatus('idle'); }}>
-                  Cancel
-                </Button>
-                <Button className="flex-1 bg-accent hover:bg-accent/90 text-btn-text" onClick={handleCapture}>
-                  <Camera className="w-5 h-5 mr-2" />
-                  Verify
-                </Button>
+              
+              <p className="text-center text-text-s text-xs max-w-xs">{message}</p>
+              
+              <input
+                type="file"
+                ref={cameraFileInputRef}
+                accept="image/*"
+                capture="user"
+                onChange={handleCameraFallbackFileSelect}
+                className="hidden"
+              />
+
+              <div className="flex flex-col gap-2.5 w-full max-w-sm">
+                <div className="flex gap-3">
+                  <Button variant="outline" className="flex-1" onClick={() => { stopCamera(); setStatus('idle'); }}>
+                    Cancel
+                  </Button>
+                  <Button className="flex-1 bg-accent hover:bg-accent/90 text-btn-text font-bold" onClick={handleCapture}>
+                    <Camera className="w-4 h-4 mr-2" />
+                    Verify Face
+                  </Button>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="flex-1 text-xs text-text-s hover:text-text-p"
+                    onClick={() => {
+                      if (actionType) startCamera(actionType);
+                    }}
+                  >
+                    <RotateCw className="w-3.5 h-3.5 mr-1" /> Restart Camera
+                  </Button>
+                  
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="flex-1 text-xs text-accent hover:bg-accent/10"
+                    onClick={() => cameraFileInputRef.current?.click()}
+                  >
+                    <Upload className="w-3.5 h-3.5 mr-1" /> Upload Photo Instead
+                  </Button>
+                </div>
               </div>
             </motion.div>
           )}
