@@ -1038,7 +1038,7 @@ export default function WorkerDashboard() {
                   <Button 
                     variant="outline" 
                     size="sm"
-                    className="h-8 px-3 text-[10px] text-accent hover:bg-accent/10 border-accent/30 shadow-sm"
+                    className="h-8 px-3 text-[10px] text-accent hover:bg-accent/10 border-accent/30"
                     onClick={async () => {
                       try {
                         const params = new URLSearchParams();
@@ -1066,7 +1066,7 @@ export default function WorkerDashboard() {
                   </Button>
                 </CardHeader>
                 <CardContent className="flex-1 overflow-y-auto pt-0 pb-4">
-                  <div className="flex items-center justify-between p-3 mb-4 rounded-xl bg-card-bg border border-card-border shadow-sm">
+                  <div className="flex items-center justify-between p-3 mb-4 rounded-xl bg-card-bg border border-card-border">
                     <div className="text-center">
                       <p className="text-xs text-text-s font-medium uppercase tracking-wider">Present</p>
                       <p className="text-xl font-semibold text-success">{presentDays}</p>
@@ -1089,14 +1089,14 @@ export default function WorkerDashboard() {
                             <p key={rIdx} className="text-[11px] text-text-s mt-0.5">
                               {r.status === 'clock-in' ? 'In: ' : 'Out: '} {format(new Date(r.timestamp), 'hh:mm a')}
                               {r.workedHours && (
-                                <span className="ml-2 text-text-p bg-bg px-1.5 py-0 rounded font-medium shadow-sm">
+                                <span className="ml-2 text-text-p bg-bg px-1.5 py-0 rounded font-medium">
                                   {r.workedHours.toFixed(1)}h
                                 </span>
                               )}
                             </p>
                           ))}
                         </div>
-                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-bg shadow-sm">
+                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-bg">
                           {data.clockedIn ? (
                             <CheckCircle2 className="w-5 h-5 text-success" />
                           ) : data.isPastDay ? (
@@ -1136,7 +1136,7 @@ export default function WorkerDashboard() {
                     
                     <div className="space-y-4">
                       <div className="flex flex-col items-center gap-3">
-                        <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-card-border bg-card-bg shadow-sm">
+                        <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-card-border bg-card-bg">
                            {editPhoto ? (
                              <img src={editPhoto} alt="Profile" className="w-full h-full object-cover" />
                            ) : (

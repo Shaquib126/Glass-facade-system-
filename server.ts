@@ -1863,7 +1863,7 @@ function getAIClient(): GoogleGenAI {
     if (!key) {
       throw new Error('GEMINI_API_KEY environment variable is missing.');
     }
-    aiClient = new GoogleGenAI({ apiKey: key });
+    aiClient = new GoogleGenAI({ apiKey: key, httpOptions: { headers: { 'User-Agent': 'aistudio-build' } } });
   }
   return aiClient;
 }
@@ -1873,7 +1873,8 @@ app.post('/api/chat', authenticateToken, async (req: any, res: any) => {
     const { history, message } = req.body;
     const ai = getAIClient();
     const chat = ai.chats.create({
-      model: 'gemini-3.1-pro-preview',
+      model: 'gemini-3.6-flash',
+      history: history,
       config: {
         systemInstruction: 'You are a helpful, professional AI assistant for the Glass Fab Attendance and Site Management system. Your role is to help admins and workers understand how to use the dashboard, manage site geofences, and review attendance logs. Keep your answers concise and highly relevant.',
       }

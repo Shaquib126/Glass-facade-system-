@@ -1058,7 +1058,7 @@ export default function AdminDashboard() {
               <h1 className="text-[28px] font-bold tracking-tight">Command Center</h1>
               <p className="text-[14px] text-text-s">Glass Fab System</p>
             </div>
-            <div className="bg-success/10 border border-success/20 text-success px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-2 shadow-sm">
+            <div className="bg-success/10 border border-success/20 text-success px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span>
               System Live
             </div>
@@ -1070,7 +1070,7 @@ export default function AdminDashboard() {
             <div className="lg:col-span-2 flex flex-col gap-6">
               
               {/* Bento 1: Stats */}
-              <Card className="flex justify-around items-center p-0 py-6 bg-card-bg shadow-sm">
+              <Card className="flex justify-around items-center p-0 py-6 bg-card-bg">
                 <div className="text-center">
                   <div className="text-[36px] font-bold mb-1">{users.length}</div>
                   <div className="text-[12px] text-text-s">Total Users</div>
@@ -1091,7 +1091,7 @@ export default function AdminDashboard() {
               <AttendanceTrendsChart attendance={attendance} users={users} />
 
               {/* Bento 1.5: Weekly Attendance Overview */}
-              <Card className="flex flex-col shadow-sm">
+              <Card className="flex flex-col">
                 <CardHeader className="pb-3 border-b border-card-border/50">
                   <CardTitle>Weekly Attendance Overview (Last 7 Days)</CardTitle>
                 </CardHeader>
@@ -1134,7 +1134,7 @@ export default function AdminDashboard() {
               </Card>
 
               {/* Bento 2: Live Activity Feed & Filters */}
-              <Card className="flex flex-col h-[450px] shadow-sm">
+              <Card className="flex flex-col h-[450px]">
                 <CardHeader className="pb-3 border-b border-card-border/50">
                   <CardTitle>{isFiltering ? 'Filtered Records' : 'Live Activity Feed'}</CardTitle>
                 </CardHeader>
@@ -1210,7 +1210,7 @@ export default function AdminDashboard() {
                                 )}
                               </div>
                               {record.workedHours !== undefined && (
-                                <div className="text-[10px] text-text-p bg-bg px-2 py-0.5 rounded-md border border-card-border font-medium shadow-sm">
+                                <div className="text-[10px] text-text-p bg-bg px-2 py-0.5 rounded-md border border-card-border font-medium">
                                   {record.workedHours} hrs
                                 </div>
                               )}
@@ -1251,11 +1251,11 @@ export default function AdminDashboard() {
               </Card>
 
               {/* Bento 3: Site Geo-fences */}
-              <Card className="flex flex-col shadow-sm">
+              <Card className="flex flex-col">
                 <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-card-border/50">
                   <CardTitle>Site Geo-fences</CardTitle>
                   {canManageSites && (
-                    <Button variant="ghost" size="sm" onClick={openAddSite} className="h-8 px-3 text-xs bg-accent hover:bg-accent/90 text-btn-text shadow-sm font-semibold">
+                    <Button variant="ghost" size="sm" onClick={openAddSite} className="h-8 px-3 text-xs bg-accent hover:bg-accent/90 text-btn-text font-semibold">
                       + Create Site
                     </Button>
                   )}
@@ -1274,10 +1274,10 @@ export default function AdminDashboard() {
                         </div>
                         {canManageSites && (
                           <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => startEditingSite(s)} className="p-1.5 hover:bg-card-bg border border-transparent hover:border-card-border rounded-lg text-text-s hover:text-accent transition-colors shadow-sm">
+                            <button onClick={() => startEditingSite(s)} className="p-1.5 hover:bg-card-bg border border-transparent hover:border-card-border rounded-lg text-text-s hover:text-accent transition-colors">
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => handleDeleteSite(s._id)} className="p-1.5 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-lg text-text-s hover:text-red-400 transition-colors shadow-sm">
+                            <button onClick={() => handleDeleteSite(s._id)} className="p-1.5 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 rounded-lg text-text-s hover:text-red-400 transition-colors">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -1290,7 +1290,7 @@ export default function AdminDashboard() {
               </Card>
 
               {/* Bento 3.5: User Feedback Feed */}
-              <Card className="flex flex-col h-[300px] shadow-sm">
+              <Card className="flex flex-col h-[300px]">
                 <CardHeader className="pb-3 border-b border-card-border/50">
                   <CardTitle>Worker Feedback</CardTitle>
                 </CardHeader>
@@ -1312,7 +1312,7 @@ export default function AdminDashboard() {
               </Card>
 
               {/* Bento Gallery: Documentations & Images */}
-              <Card className="flex flex-col shadow-sm min-h-[300px]">
+              <Card className="flex flex-col min-h-[300px]">
                 <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-card-border/50">
                   <CardTitle>Project Gallery</CardTitle>
                   {(user?.role === 'admin' || user?.role === 'manager') && (
@@ -1329,7 +1329,7 @@ export default function AdminDashboard() {
                         size="sm" 
                         onClick={() => fileInputRef.current?.click()} 
                         disabled={uploadingImage}
-                        className="h-8 px-3 text-xs bg-accent hover:bg-accent/90 text-btn-text shadow-sm font-semibold"
+                        className="h-8 px-3 text-xs bg-accent hover:bg-accent/90 text-btn-text font-semibold"
                       >
                         {uploadingImage ? 'Uploading...' : '+ Upload Image'}
                       </Button>
@@ -1461,18 +1461,18 @@ export default function AdminDashboard() {
               )}
 
               {/* Bento 5: Personnel */}
-              <Card className="flex flex-col flex-1 min-h-[400px] shadow-sm">
+              <Card className="flex flex-col flex-1 min-h-[400px]">
                 <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-card-border/50">
                   <CardTitle>Personnel Registry</CardTitle>
                   {(user?.role === 'admin' || user?.role === 'manager') && (
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setMakingSalarySlipForUser({ name: 'All Workers', isBulk: true })} className="h-8 px-3 text-[10px] text-accent hover:bg-accent/10 border-accent/30 shadow-sm" title="Issue Salary Slips to All">
+                      <Button variant="outline" size="sm" onClick={() => setMakingSalarySlipForUser({ name: 'All Workers', isBulk: true })} className="h-8 px-3 text-[10px] text-accent hover:bg-accent/10 border-accent/30" title="Issue Salary Slips to All">
                         <FileText className="w-3.5 h-3.5 mr-1.5" /> BULK ISSUE
                       </Button>
-                      <Button variant="outline" size="sm" onClick={downloadSalaryReport} className="h-8 px-3 text-[10px] text-text-p hover:text-accent hover:border-accent/50 shadow-sm" title="Download Salary CSV">
+                      <Button variant="outline" size="sm" onClick={downloadSalaryReport} className="h-8 px-3 text-[10px] text-text-p hover:text-accent hover:border-accent/50" title="Download Salary CSV">
                         <Download className="w-3.5 h-3.5 mr-1.5" /> EXPORT
                       </Button>
-                      <Button variant="outline" size="sm" onClick={syncSalaryReportToSheets} disabled={isSyncing} className="h-8 px-3 text-[10px] text-success hover:bg-success/10 border-success/30 shadow-sm" title="Sync to Google Sheets">
+                      <Button variant="outline" size="sm" onClick={syncSalaryReportToSheets} disabled={isSyncing} className="h-8 px-3 text-[10px] text-success hover:bg-success/10 border-success/30" title="Sync to Google Sheets">
                         <FileText className="w-3.5 h-3.5 mr-1.5" /> {isSyncing ? 'SYNCING...' : 'SYNC TO SHEETS'}
                       </Button>
                     </div>
@@ -1497,7 +1497,7 @@ export default function AdminDashboard() {
                                 {u.role}
                               </span>
                               {u.employeeId && (
-                                <span className="text-[9px] text-text-p bg-bg border border-card-border px-1.5 py-0.5 rounded font-mono shadow-sm">
+                                <span className="text-[9px] text-text-p bg-bg border border-card-border px-1.5 py-0.5 rounded font-mono">
                                   ID: {u.employeeId}
                                 </span>
                               )}
@@ -1510,7 +1510,7 @@ export default function AdminDashboard() {
                           </div>
                         </div>
                         <div className="flex items-center">
-                          <button onClick={(e) => { e.stopPropagation(); setSelectedUser(u); setSelectedUserTab('overview'); }} className="p-1.5 text-text-s hover:text-accent transition-colors bg-bg border border-card-border rounded-lg shadow-sm font-semibold text-xs px-3">
+                          <button onClick={(e) => { e.stopPropagation(); setSelectedUser(u); setSelectedUserTab('overview'); }} className="p-1.5 text-text-s hover:text-accent transition-colors bg-bg border border-card-border rounded-lg font-semibold text-xs px-3">
                             View Details
                           </button>
                         </div>
@@ -1521,7 +1521,7 @@ export default function AdminDashboard() {
               </Card>
 
               {/* Bento 6: Daily Hours Summary */}
-              <Card className="flex flex-col shadow-sm max-h-[350px]">
+              <Card className="flex flex-col max-h-[350px]">
                 <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-card-border/50">
                   <CardTitle>Daily Hours Summary</CardTitle>
                 </CardHeader>
@@ -1531,7 +1531,7 @@ export default function AdminDashboard() {
                       <div key={i} className="flex flex-col justify-center px-6 py-3 border-b border-card-border last:border-0 group hover:bg-card-border/10 transition-colors">
                         <div className="flex justify-between items-center w-full">
                           <p className="font-semibold text-[13px] truncate flex-1">{record.email}</p>
-                          <div className="text-[12px] font-mono font-bold bg-accent/10 border border-accent/20 px-2.5 py-1 rounded-md text-accent ml-3 shadow-sm">
+                          <div className="text-[12px] font-mono font-bold bg-accent/10 border border-accent/20 px-2.5 py-1 rounded-md text-accent ml-3">
                             {record.totalHours.toFixed(2)} hrs
                           </div>
                         </div>
@@ -1760,7 +1760,7 @@ export default function AdminDashboard() {
                       {selectedUser.role}
                     </span>
                     {selectedUser.employeeId && (
-                      <span className="text-[10px] uppercase tracking-wider bg-bg border border-card-border text-text-p px-2 py-0.5 rounded font-mono shadow-sm">
+                      <span className="text-[10px] uppercase tracking-wider bg-bg border border-card-border text-text-p px-2 py-0.5 rounded font-mono">
                         ID: {selectedUser.employeeId}
                       </span>
                     )}
@@ -1912,13 +1912,13 @@ export default function AdminDashboard() {
                           </div>
                           <div className="flex items-center gap-2">
                             {record.faceConfidence !== undefined && record.faceConfidence > 0 && record.faceConfidence < 0.65 && (
-                                <div className="text-[10px] text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded border border-orange-400/20 shadow-sm flex items-center gap-1" title="Low face recognition confidence">
+                                <div className="text-[10px] text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded border border-orange-400/20 flex items-center gap-1" title="Low face recognition confidence">
                                   <AlertTriangle className="w-3 h-3" />
                                   {(record.faceConfidence * 100).toFixed(0)}%
                                 </div>
                             )}
                             {record.workedHours !== undefined && (
-                              <div className="text-[11px] font-mono font-bold text-accent bg-accent/10 flex items-center justify-center px-2 py-0.5 rounded border border-accent/20 shadow-sm">
+                              <div className="text-[11px] font-mono font-bold text-accent bg-accent/10 flex items-center justify-center px-2 py-0.5 rounded border border-accent/20">
                                 {record.workedHours} hrs
                               </div>
                             )}
