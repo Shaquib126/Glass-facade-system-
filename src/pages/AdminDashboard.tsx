@@ -859,12 +859,40 @@ export default function AdminDashboard() {
     }
   };
 
-  const exportUserReport = async (userId: string) => {
+  const exportUserReport = async (userId: string, range?: '30-days' | 'previous-month' | 'this-month') => {
     try {
       const params = new URLSearchParams();
       params.append('userId', userId);
+      
+      if (range === 'previous-month') {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const end = new Date(now.getFullYear(), now.getMonth(), 0);
+        params.append('startDate', start.toISOString());
+        params.append('endDate', end.toISOString());
+      } else if (range === 'this-month') {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        params.append('startDate', start.toISOString());
+        params.append('endDate', end.toISOString());
+      }
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (tz) params.append('timezone', tz);
+      
+      if (range === 'previous-month') {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const end = new Date(now.getFullYear(), now.getMonth(), 0);
+        params.append('startDate', start.toISOString());
+        params.append('endDate', end.toISOString());
+      } else if (range === 'this-month') {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        params.append('startDate', start.toISOString());
+        params.append('endDate', end.toISOString());
+      }
       const res = await fetch(`/api/reports/attendance/export?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -885,7 +913,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const syncUserReportToSheets = async (userId: string) => {
+  const syncUserReportToSheets = async (userId: string, range?: '30-days' | 'previous-month' | 'this-month') => {
     setIsSyncing(true);
     try {
       const params = new URLSearchParams();
@@ -1768,16 +1796,25 @@ export default function AdminDashboard() {
                   <div className="space-y-3">
                     <h4 className="text-xs font-semibold text-text-s uppercase tracking-wider">Reports & Data</h4>
                     <div className="grid grid-cols-1 gap-2">
+                      <div className="flex gap-2">
+                        <Button 
+                          className="flex-1 justify-center gap-1.5 bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 text-xs px-2"
+                          onClick={() => exportUserReport(selectedUser._id, '30-days')}
+                        >
+                          <Download className="w-3.5 h-3.5 flex-shrink-0" />
+                          30 Days
+                        </Button>
+                        <Button 
+                          className="flex-1 justify-center gap-1.5 bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 text-xs px-2"
+                          onClick={() => exportUserReport(selectedUser._id, 'previous-month')}
+                        >
+                          <Download className="w-3.5 h-3.5 flex-shrink-0" />
+                          Prev Month
+                        </Button>
+                      </div>
                       <Button 
-                        className="w-full justify-start gap-3 bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20"
-                        onClick={() => exportUserReport(selectedUser._id)}
-                      >
-                        <Download className="w-4 h-4" />
-                        Download 30-Day Attendance CSV
-                      </Button>
-                      <Button 
-                        className="w-full justify-start gap-3 bg-success/10 text-success hover:bg-success/20 border border-success/20"
-                        onClick={() => syncUserReportToSheets(selectedUser._id)}
+                        className="w-full justify-center gap-3 bg-success/10 text-success hover:bg-success/20 border border-success/20"
+                        onClick={() => syncUserReportToSheets(selectedUser._id, '30-days')}
                         disabled={isSyncing}
                       >
                         <FileText className="w-4 h-4" />

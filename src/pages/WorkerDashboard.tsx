@@ -532,18 +532,28 @@ export default function WorkerDashboard() {
   };
 
   useEffect(() => {
-    if ((status === 'camera' || enrollStatus === 'camera') && streamRef.current && videoRef.current) {
+    let attempts = 0;
+    const attach = () => {
       const video = videoRef.current;
-      video.muted = true;
-      video.playsInline = true;
-      if (video.srcObject !== streamRef.current) {
-        video.srcObject = streamRef.current;
+      const stream = streamRef.current;
+      if ((status === 'camera' || enrollStatus === 'camera') && stream && video) {
+        video.muted = true;
+        video.playsInline = true;
+        if (video.srcObject !== stream) {
+          video.srcObject = stream;
+        }
+        video.onloadedmetadata = () => {
+          video.play().catch(err => console.error('[Camera] Play on metadata error:', err));
+        };
+        video.play().catch(err => console.error('[Camera] Immediate play error:', err));
+      } else if ((status === 'camera' || enrollStatus === 'camera') && streamRef.current) {
+        if (attempts < 50) {
+          attempts++;
+          setTimeout(attach, 100);
+        }
       }
-      video.onloadedmetadata = () => {
-        video.play().catch(err => console.error('[Camera] Play on metadata error:', err));
-      };
-      video.play().catch(err => console.error('[Camera] Immediate play error:', err));
-    }
+    };
+    attach();
   }, [status, enrollStatus, view]);
 
   const startCamera = async (type: 'clock-in' | 'clock-out') => {
@@ -554,19 +564,7 @@ export default function WorkerDashboard() {
       const stream = await getCameraStream();
       streamRef.current = stream;
       
-      let attempts = 0;
-      const attachStream = () => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(e => console.error('Play error:', e));
-        } else if (attempts < 50) {
-          attempts++;
-          setTimeout(attachStream, 100);
-        } else {
-          console.error("Video element never mounted");
-        }
-      };
-      attachStream();
+
     } catch (err) {
       setStatus('error');
       setMessage('Camera access denied');
@@ -587,19 +585,7 @@ export default function WorkerDashboard() {
       const stream = await getCameraStream();
       streamRef.current = stream;
       
-      let attempts = 0;
-      const attachStream = () => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(e => console.error('Play error:', e));
-        } else if (attempts < 50) {
-          attempts++;
-          setTimeout(attachStream, 100);
-        } else {
-          console.error("Video element never mounted");
-        }
-      };
-      attachStream();
+
     } catch (err) {
       setEnrollStatus('error');
       setEnrollMessage('Camera access denied');
