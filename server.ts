@@ -802,21 +802,37 @@ app.get('/api/reports/attendance/export/me', authenticateToken, async (req: any,
 app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
   try {
     const { startDate, endDate, userId, timezone } = req.query;
+    
     let query: any = {};
-
+    let userName = 'User';
+    
     if (userId && userId !== 'all') {
       query.userId = userId;
+      const user = await User.findById(userId);
+      if (user && user.name) {
+        userName = user.name;
+      }
     }
+
+    let actualStartDate, actualEndDate;
 
     if (startDate || endDate) {
       query.timestamp = {};
-      if (startDate) query.timestamp.$gte = new Date(startDate).toISOString();
-      if (endDate) query.timestamp.$lte = new Date(`${endDate}T23:59:59.999Z`).toISOString();
+      if (startDate) {
+        query.timestamp.$gte = new Date(startDate).toISOString();
+        actualStartDate = new Date(startDate);
+      }
+      if (endDate) {
+        query.timestamp.$lte = new Date(`${endDate.split('T')[0]}T23:59:59.999Z`).toISOString();
+        actualEndDate = new Date(`${endDate.split('T')[0]}T23:59:59.999Z`);
+      }
     } else {
       // Default to last 31 days
       const lastMonth = new Date();
       lastMonth.setDate(lastMonth.getDate() - 31);
       query.timestamp = { $gte: lastMonth.toISOString() };
+      actualStartDate = lastMonth;
+      actualEndDate = new Date();
     }
 
     const records = await Attendance.find(query).sort({ timestamp: -1 });
@@ -826,21 +842,20 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
       const d = new Date(r.timestamp);
       
       const dateOpts: any = {};
-      const timeOpts: any = { hour12: true, hour: 'numeric', minute: '2-digit', second: '2-digit' };
+      const timeOpts: any = { hour12: false, hour: '2-digit', minute: '2-digit' };
       if (timezone) {
         dateOpts.timeZone = timezone;
         timeOpts.timeZone = timezone;
       }
       
-      // We use the local date string to group records on the same local date
-      const localDateStr = d.toLocaleDateString('en-US', dateOpts);
-      const key = `${r.userEmail}_${localDateStr}`;
+      // Use standard YYYY-MM-DD for grouping if possible, but localDateStr is MM/DD/YYYY
+      // We will extract year, month, day to build a consistent key
+      const localDateStr = d.toLocaleDateString('en-CA', dateOpts); // 'en-CA' gives YYYY-MM-DD
+      const key = localDateStr; // Just date as key since it's one user
       
       if (!grouped[key]) {
         grouped[key] = {
-           sortableTime: d.getTime(), // For sorting rows later
-           date: localDateStr,
-           email: r.userEmail || '',
+           dateStr: localDateStr,
            clockIn: null,
            clockOut: null,
            workedHours: 0,
@@ -852,11 +867,10 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
       const timeStr = d.toLocaleTimeString('en-US', timeOpts);
       
       if (r.status === 'clock-in') {
-         // Descending order: the last clock-in encountered is the earliest in the day.
+         // The last clock-in encountered is the earliest in the day because of sort desc
          grouped[key].clockIn = timeStr;
          grouped[key].locIn = (r.location && r.location.lat) ? `${r.location.lat}, ${r.location.lng}` : '';
       } else if (r.status === 'clock-out') {
-         // Descending order: the first clock-out encountered is the latest in the day.
          if (!grouped[key].clockOut) {
              grouped[key].clockOut = timeStr;
              grouped[key].locOut = (r.location && r.location.lat) ? `${r.location.lat}, ${r.location.lng}` : '';
@@ -867,32 +881,81 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
       }
     }
 
-    const csvRows = [
-      ['Date', 'User Email', 'Clock In Time', 'Clock Out Time', 'Total Worked Hours', 'OT Hours (Over 8h)', 'Clock In Location', 'Clock Out Location']
-    ];
-
-    // Convert object to array and sort descending by time
-    const sortedGroups = Object.values(grouped).sort((a: any, b: any) => b.sortableTime - a.sortableTime);
-
-    for (const g of (sortedGroups as any[])) {
-       let otHours = 0;
-       if (g.workedHours && g.workedHours > 8) {
-         otHours = g.workedHours - 8;
-       }
-       csvRows.push([
-         g.date,
-         g.email,
-         g.clockIn || '-',
-         g.clockOut || '-',
-         g.workedHours ? g.workedHours.toFixed(2) : '0',
-         otHours ? otHours.toFixed(2) : '0',
-         g.locIn ? `"${g.locIn}"` : '',
-         g.locOut ? `"${g.locOut}"` : ''
-       ]);
-    }
-
-    const csvString = csvRows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    // Now generate rows
+    // Determine the actual loop start and end
+    let loopStart = new Date(actualStartDate || new Date());
+    let loopEnd = new Date(actualEndDate || new Date());
     
+    // We want to loop by day, ignoring time
+    loopStart.setHours(12, 0, 0, 0);
+    loopEnd.setHours(12, 0, 0, 0);
+
+    const rows = [];
+    
+    let totalWorkingDays = 0;
+    let absentDays = 0;
+    let sundayShifts = 0;
+    let totalOTHours = 0;
+    
+    let curr = new Date(loopStart);
+    while (curr <= loopEnd) {
+      const dateOpts: any = {};
+      if (timezone) dateOpts.timeZone = timezone;
+      
+      const dStr = curr.toLocaleDateString('en-CA', dateOpts); // YYYY-MM-DD
+      const dDay = parseInt(dStr.split('-')[2]); // just the date number (e.g. 1 to 31)
+      const isSunday = curr.getDay() === 0;
+      
+      let dayNote = isSunday ? 'Sun' : '-';
+      let inTime = 'Absent';
+      let outTime = 'Absent';
+      let otHours = 0;
+      
+      if (grouped[dStr]) {
+        const g = grouped[dStr];
+        inTime = g.clockIn || 'Absent';
+        outTime = g.clockOut || 'Absent';
+        if (g.workedHours && g.workedHours > 9) {
+          otHours = Math.floor(g.workedHours - 9);
+        }
+        
+        if (isSunday) {
+          sundayShifts++;
+        } else {
+          totalWorkingDays++;
+        }
+        totalOTHours += otHours;
+      } else {
+        if (!isSunday) {
+          absentDays++;
+        }
+      }
+      
+      rows.push({
+        dateNum: dDay,
+        note: dayNote,
+        in: inTime,
+        out: outTime,
+        ot: otHours
+      });
+      
+      curr.setDate(curr.getDate() + 1);
+    }
+    
+    // Construct CSV string
+    const csvLines = [];
+    csvLines.push(`"${userName} OT & Attendance Tracker"`);
+    csvLines.push('');
+    csvLines.push('Total Working Days,Absent Days,Sunday Shifts,Total OT Hours');
+    csvLines.push(`${totalWorkingDays},${absentDays},${sundayShifts},${totalOTHours}`);
+    csvLines.push('Date,Day/Note,In Time,Out Time,OT Hours');
+    
+    for (const r of rows) {
+      csvLines.push(`${r.dateNum},${r.note},${r.in},${r.out},${r.ot}`);
+    }
+    
+    const csvString = csvLines.join('\n');
+        
     res.header('Content-Type', 'text/csv');
     res.attachment('attendance_report.csv');
     res.send(csvString);

@@ -1,6 +1,6 @@
 import * as faceapi from 'face-api.js';
 
-const MODEL_URL = '/models';
+const MODEL_URL = `${window.location.origin}/models`;
 
 // Configurable threshold for face matching. Lower is stricter.
 export const DEFAULT_MATCH_THRESHOLD = 0.55;
@@ -17,7 +17,7 @@ export const loadModels = async () => {
     ]);
 
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Face models load timeout. Please check your internet connection.')), 30000);
+      setTimeout(() => reject(new Error('Face models load timeout. Please check your internet connection.')), 60000);
     });
 
     await Promise.race([loadPromise, timeoutPromise]);
