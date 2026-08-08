@@ -11,7 +11,6 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { googleSignIn, getAccessToken } from '../lib/firebase';
 import { createAndPopulateSheet } from '../lib/googleSheets';
 import { MonthlyAttendanceTable } from '../components/MonthlyAttendanceTable';
-import { AttendanceTrendsChart } from '../components/AttendanceTrendsChart';
 
 const UserAutocomplete = ({ users, value, onChange }: { users: any[], value: string, onChange: (val: string) => void }) => {
   const [search, setSearch] = useState('');
@@ -1114,9 +1113,6 @@ export default function AdminDashboard() {
                   <div className="text-[12px] text-text-s">Uptime</div>
                 </div>
               </Card>
-
-              {/* Manager Attendance Trends Component */}
-              <AttendanceTrendsChart attendance={attendance} users={users} />
 
               {/* Bento 1.5: Weekly Attendance Overview */}
               <Card className="flex flex-col">
