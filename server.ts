@@ -721,7 +721,9 @@ app.get('/api/reports/attendance/export/me', authenticateToken, async (req: any,
 
     const grouped: any = {};
     for (const r of (records as any[])) {
+      if (!r.timestamp) continue;
       const d = new Date(r.timestamp);
+      if (isNaN(d.valueOf())) continue;
       
       const dateOpts: any = {};
       const timeOpts: any = { hour12: true, hour: 'numeric', minute: '2-digit', second: '2-digit' };
@@ -799,7 +801,7 @@ app.get('/api/reports/attendance/export/me', authenticateToken, async (req: any,
   }
 });
 
-app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManager, async (req: any, res: any) => {
+app.get('/api/reports/attendance/export', authenticateToken, requireDashboardAccess, async (req: any, res: any) => {
   try {
     const { startDate, endDate, userId, timezone } = req.query;
     
@@ -932,7 +934,7 @@ app.get('/api/reports/attendance/export', authenticateToken, requireAdminOrManag
       }
       
       rows.push({
-        dateNum: dDay,
+        dateNum: dStr,
         note: dayNote,
         in: inTime,
         out: outTime,

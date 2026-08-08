@@ -639,9 +639,13 @@ export default function AdminDashboard() {
       
       showToastMsg(`Successfully synced to Google Sheets!\n\nLink: ${sheetUrl}`, 'success');
       window.open(sheetUrl, '_blank');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      showToastMsg('Error syncing to Google Sheets');
+      if (err.message && err.message.toLowerCase().includes('popup')) {
+        showToastMsg('Google Sign-In popup blocked. Please open this app in a new tab to sync to Google Sheets.', 'error');
+      } else {
+        showToastMsg(err.message || 'Error syncing to Google Sheets');
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -906,9 +910,9 @@ export default function AdminDashboard() {
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      showToastMsg('Failed to download attendance report for this user');
+      showToastMsg(err.message || 'Failed to download attendance report for this user');
     }
   };
 
@@ -917,13 +921,33 @@ export default function AdminDashboard() {
     try {
       const params = new URLSearchParams();
       params.append('userId', userId);
+      if (range === 'previous-month') {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const end = new Date(now.getFullYear(), now.getMonth(), 0);
+        params.append('startDate', start.toISOString());
+        params.append('endDate', end.toISOString());
+      } else if (range === 'this-month') {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        params.append('startDate', start.toISOString());
+        params.append('endDate', end.toISOString());
+      }
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (tz) params.append('timezone', tz);
 
       const res = await fetch(`/api/reports/attendance/export?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (!res.ok) throw new Error('Failed to fetch user report for sync');
+      if (!res.ok) {
+        let errMsg = 'Failed to fetch user report for sync';
+        try {
+          const errData = await res.json();
+          errMsg = errData.message || errMsg;
+        } catch(e){}
+        throw new Error(errMsg);
+      }
       
       const csvData = await res.text();
 
@@ -943,9 +967,13 @@ export default function AdminDashboard() {
       
       showToastMsg(`Successfully synced ${userName}'s report to Google Sheets!\n\nLink: ${sheetUrl}`, 'success');
       window.open(sheetUrl, '_blank');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      showToastMsg('Error syncing user report to Google Sheets');
+      if (err.message && err.message.toLowerCase().includes('popup')) {
+        showToastMsg('Google Sign-In popup blocked. Please open this app in a new tab to sync to Google Sheets.', 'error');
+      } else {
+        showToastMsg(err.message || 'Error syncing user report to Google Sheets');
+      }
     } finally {
       setIsSyncing(false);
     }
