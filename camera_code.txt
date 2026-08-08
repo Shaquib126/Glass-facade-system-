@@ -1,0 +1,59 @@
+
+    const attach = () => {
+      const video = videoRef.current;
+      const stream = streamRef.current;
+      if ((status === 'camera' || enrollStatus === 'camera') && stream && video) {
+        video.muted = true;
+        video.playsInline = true;
+        if (video.srcObject !== stream) {
+          video.srcObject = stream;
+        }
+        video.onloadedmetadata = () => {
+          video.play().catch(err => console.error('[Camera] Play on metadata error:', err));
+        };
+        video.play().catch(err => console.error('[Camera] Immediate play error:', err));
+      } else if ((status === 'camera' || enrollStatus === 'camera') && streamRef.current) {
+        if (attempts < 50) {
+          attempts++;
+          setTimeout(attach, 100);
+        }
+      }
+    };
+    attach();
+  }, [status, enrollStatus, view]);
+
+  const startCamera = async (type: 'clock-in' | 'clock-out') => {
+    setActionType(type);
+    setStatus('camera');
+    setMessage('Position your face in the frame');
+    try {
+      const stream = await getCameraStream();
+      streamRef.current = stream;
+      
+
+    } catch (err) {
+      setStatus('error');
+      setMessage('Camera access denied');
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const startEnrollCamera = async () => {
+    setEnrollStatus('camera');
+    setEnrollMessage('Position your face in the frame');
+    try {
+      const stream = await getCameraStream();
+      streamRef.current = stream;
+      
+
+    } catch (err) {
+      setEnrollStatus('error');
+      setEnrollMessage('Camera access denied');
+    }
+  };

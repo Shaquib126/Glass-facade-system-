@@ -531,29 +531,25 @@ export default function WorkerDashboard() {
     }
   };
 
-  useEffect(() => {
-    let attempts = 0;
-    const attach = () => {
-      const video = videoRef.current;
-      const stream = streamRef.current;
-      if ((status === 'camera' || enrollStatus === 'camera') && stream && video) {
-        video.muted = true;
-        video.playsInline = true;
-        if (video.srcObject !== stream) {
-          video.srcObject = stream;
-        }
-        video.onloadedmetadata = () => {
-          video.play().catch(err => console.error('[Camera] Play on metadata error:', err));
-        };
-        video.play().catch(err => console.error('[Camera] Immediate play error:', err));
-      } else if ((status === 'camera' || enrollStatus === 'camera') && streamRef.current) {
-        if (attempts < 50) {
-          attempts++;
-          setTimeout(attach, 100);
-        }
+  const attachStream = (stream: MediaStream, attempts = 0) => {
+    const video = videoRef.current;
+    if (video) {
+      video.muted = true;
+      video.playsInline = true;
+      if (video.srcObject !== stream) {
+        video.srcObject = stream;
       }
-    };
-    attach();
+      video.onloadedmetadata = () => {
+        video.play().catch(err => console.error('[Camera] Play on metadata error:', err));
+      };
+      video.play().catch(err => console.error('[Camera] Immediate play error:', err));
+    } else if (attempts < 50) {
+      setTimeout(() => attachStream(stream, attempts + 1), 100);
+    }
+  };
+
+  useEffect(() => {
+    if (streamRef.current) attachStream(streamRef.current);
   }, [status, enrollStatus, view]);
 
   const startCamera = async (type: 'clock-in' | 'clock-out') => {
@@ -563,6 +559,7 @@ export default function WorkerDashboard() {
     try {
       const stream = await getCameraStream();
       streamRef.current = stream;
+      attachStream(stream);
       
 
     } catch (err) {
@@ -584,6 +581,7 @@ export default function WorkerDashboard() {
     try {
       const stream = await getCameraStream();
       streamRef.current = stream;
+      attachStream(stream);
       
 
     } catch (err) {
