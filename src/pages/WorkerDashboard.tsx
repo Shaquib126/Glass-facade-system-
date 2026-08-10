@@ -535,14 +535,25 @@ export default function WorkerDashboard() {
     const video = videoRef.current;
     if (video) {
       video.muted = true;
+      video.defaultMuted = true;
       video.playsInline = true;
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('muted', 'true');
+      
       if (video.srcObject !== stream) {
         video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          video.play().catch(e => console.warn('[Camera] Play on metadata error:', e));
+        };
       }
-      video.onloadedmetadata = () => {
-        video.play().catch(err => console.error('[Camera] Play on metadata error:', err));
-      };
-      video.play().catch(err => console.error('[Camera] Immediate play error:', err));
+      
+      // Try playing immediately
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          console.warn('[Camera] Autoplay prevented, waiting for interaction:', e);
+        });
+      }
     } else if (attempts < 50) {
       setTimeout(() => attachStream(stream, attempts + 1), 100);
     }
@@ -553,6 +564,7 @@ export default function WorkerDashboard() {
   }, [status, enrollStatus, view]);
 
   const startCamera = async (type: 'clock-in' | 'clock-out') => {
+    stopCamera();
     setActionType(type);
     setStatus('camera');
     setMessage('Position your face in the frame');
@@ -576,6 +588,7 @@ export default function WorkerDashboard() {
   };
 
   const startEnrollCamera = async () => {
+    stopCamera();
     setEnrollStatus('camera');
     setEnrollMessage('Position your face in the frame');
     try {
@@ -627,7 +640,7 @@ export default function WorkerDashboard() {
 
     try {
       if (!width || !height) throw new Error('Camera not fully initialized. Please try again.');
-      const descriptor = await getFaceDescriptor(videoRef.current);
+      const descriptor = await getFaceDescriptor(canvas);
       stopCamera();
 
       if (!descriptor) {
@@ -654,7 +667,7 @@ export default function WorkerDashboard() {
   };
 
   
-  const processCapturedCanvas = async (canvas: HTMLCanvasElement) => {
+  const processCapturedCanvas = async (canvas: HTMLCanvasElement | HTMLImageElement) => {
     setStatus('processing');
     setMessage('Verifying location...');
     try {
@@ -771,6 +784,46 @@ export default function WorkerDashboard() {
         const ctx = canvas.getContext('2d');
         if (ctx) ctx.drawImage(img, 0, 0, w, h);
         processCapturedCanvas(canvas);
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleEnrollFallbackFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      img.onload = async () => {
+        setEnrollStatus('processing');
+        setEnrollMessage('Scanning face...');
+        try {
+          // Pass the image directly instead of a canvas to preserve EXIF orientation on mobile
+          const descriptor = await getFaceDescriptor(img);
+          stopCamera();
+          if (!descriptor) {
+            throw new Error('No face detected. Please try again.');
+          }
+          const res = await fetch('/api/users/me/descriptor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ faceDescriptor: Array.from(descriptor) }),
+          });
+          if (!res.ok) throw new Error('Failed to save face profile');
+          
+          updateUser({ hasFaceDescriptor: true });
+          setEnrollStatus('success');
+          setEnrollMessage('Face login configured successfully!');
+          setTimeout(() => setEnrollStatus('idle'), 3000);
+        } catch (err: any) {
+          stopCamera();
+          setEnrollStatus('error');
+          setEnrollMessage(err.message);
+          if (!err.message || !err.message.toLowerCase().includes('denied')) { setTimeout(() => setEnrollStatus('idle'), 4000); }
+        }
       };
       img.src = ev.target?.result as string;
     };
@@ -1202,7 +1255,7 @@ export default function WorkerDashboard() {
 
                       {enrollStatus === 'camera' && (
                         <div className="flex flex-col items-center space-y-4 mt-4">
-                          <div className="relative w-full aspect-square max-w-[240px] rounded-2xl overflow-hidden bg-black border border-card-border">
+                          <div className="relative w-full aspect-square max-w-[240px] rounded-2xl overflow-hidden bg-black border border-card-border" onClick={() => videoRef.current?.play()}>
                             <video
                               ref={videoRef}
                               autoPlay
@@ -1216,14 +1269,32 @@ export default function WorkerDashboard() {
                             </div>
                           </div>
                           <p className="text-center text-text-s text-sm">{enrollMessage}</p>
-                          <div className="flex gap-3 w-full max-w-[240px]">
-                            <Button type="button" variant="outline" className="flex-1" onClick={() => { stopCamera(); setEnrollStatus('idle'); }}>
-                              Cancel
+                          <div className="flex flex-col gap-2 w-full max-w-[240px]">
+                            <div className="flex gap-3 w-full">
+                              <Button type="button" variant="outline" className="flex-1" onClick={() => { stopCamera(); setEnrollStatus('idle'); }}>
+                                Cancel
+                              </Button>
+                              <Button type="button" className="flex-1 bg-accent hover:bg-accent/90 text-btn-text" onClick={handleEnrollCapture}>
+                                <Camera className="w-4 h-4 mr-2" />
+                                Capture
+                              </Button>
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="w-full text-xs text-accent hover:bg-accent/10"
+                              onClick={() => document.getElementById('enrollFallbackInput')?.click()}
+                            >
+                              <Upload className="w-3.5 h-3.5 mr-1" /> Upload Photo Instead
                             </Button>
-                            <Button type="button" className="flex-1 bg-accent hover:bg-accent/90 text-btn-text" onClick={handleEnrollCapture}>
-                              <Camera className="w-4 h-4 mr-2" />
-                              Capture
-                            </Button>
+                            <input
+                              id="enrollFallbackInput"
+                              type="file"
+                              accept="image/*"
+                              capture="user"
+                              onChange={handleEnrollFallbackFileSelect}
+                              className="hidden"
+                            />
                           </div>
                         </div>
                       )}
@@ -1505,7 +1576,7 @@ export default function WorkerDashboard() {
               exit={{ opacity: 0, y: -20 }}
               className="flex flex-col items-center space-y-4"
             >
-              <div className="relative w-full aspect-[3/4] max-w-sm rounded-3xl overflow-hidden bg-black border border-card-border shadow-lg">
+              <div className="relative w-full aspect-[3/4] max-w-sm rounded-3xl overflow-hidden bg-black border border-card-border shadow-lg" onClick={() => videoRef.current?.play()}>
                 <video
                   ref={videoRef}
                   autoPlay
@@ -1519,7 +1590,7 @@ export default function WorkerDashboard() {
                 </div>
               </div>
               
-              <p className="text-center text-text-s text-xs max-w-xs">{message}</p>
+              <p className="text-center text-text-s text-xs max-w-xs">{message}<br/><span className="text-text-muted">Tap the black frame if camera is stuck</span></p>
               
               <input
                 type="file"

@@ -17,7 +17,7 @@ export const loadModels = async () => {
     ]);
 
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Face models load timeout. Please check your internet connection.')), 60000);
+      setTimeout(() => reject(new Error('Face models load timeout. Please check your internet connection.')), 15000);
     });
 
     await Promise.race([loadPromise, timeoutPromise]);
@@ -37,7 +37,7 @@ export const getFaceDescriptor = async (mediaEl: HTMLVideoElement | HTMLCanvasEl
     .withFaceDescriptor();
 
   const timeoutPromise = new Promise<undefined>((_, reject) => {
-    setTimeout(() => reject(new Error('Face detection taking longer than expected. Please ensure your face is clearly visible and well-lit.')), 60000);
+    setTimeout(() => reject(new Error('Face detection taking longer than expected. Please ensure your face is clearly visible and well-lit.')), 15000);
   });
 
   const detection = await Promise.race([detectionPromise, timeoutPromise]) as any;
