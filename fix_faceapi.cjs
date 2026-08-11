@@ -1,6 +1,8 @@
-import * as faceapi from 'face-api.js';
+const fs = require('fs');
 
-const MODEL_URL = `${window.location.origin}/models`;
+const code = `import * as faceapi from 'face-api.js';
+
+const MODEL_URL = \`\${window.location.origin}/models\`;
 
 // Configurable threshold for face matching. Lower is stricter.
 export const DEFAULT_MATCH_THRESHOLD = 0.55;
@@ -104,3 +106,7 @@ export const compareDescriptors = (desc1: Float32Array, desc2: Float32Array, thr
   const distance = faceapi.euclideanDistance(desc1, desc2);
   return { isMatch: distance < threshold, distance };
 };
+`;
+
+fs.writeFileSync('src/lib/faceApi.ts', code);
+console.log('done updating faceApi');
