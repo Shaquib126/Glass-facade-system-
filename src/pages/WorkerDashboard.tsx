@@ -3,7 +3,7 @@ import { useAuthStore, useOfflineStore } from '../store';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
-import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload, RotateCw, RotateCcw, ZoomIn, ZoomOut, Download, Settings } from 'lucide-react';
+import { Camera, MapPin, CheckCircle2, XCircle, LogOut, History, ChevronLeft, User as UserIcon, ScanFace, Moon, Sun, Upload, RotateCw, RotateCcw, ZoomIn, ZoomOut, Download, Settings, Cloud, CloudOff } from 'lucide-react';
 import { getFaceDescriptor, compareDescriptors, loadModels } from '../lib/faceApi';
 import { getCurrentLocation, getDistance, SITE_LOCATION, MAX_DISTANCE_METERS } from '../lib/geo';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -98,6 +98,7 @@ const PermissionInstructions = ({ message, onClose }: { message: string; onClose
   const isLocation = message.toLowerCase().includes('location');
   const type = isLocation ? 'Location' : 'Camera';
 
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-card-bg w-full max-w-md rounded-2xl shadow-xl overflow-hidden border border-card-border flex flex-col">
@@ -152,6 +153,19 @@ export default function WorkerDashboard() {
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   
   const [editName, setEditName] = useState(user?.name || '');
+
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const [editMobile, setEditMobile] = useState((user as any)?.mobile || '');
   const [editPhoto, setEditPhoto] = useState((user as any)?.profilePhoto || '');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -213,8 +227,8 @@ export default function WorkerDashboard() {
 
         if (isClockedIn && clockedInToday && isEndOfDay && lastReminderDate !== todayStr) {
           localStorage.setItem('lastClockOutReminder', todayStr);
-          new Notification('Clock Out Reminder', {
-            body: 'It is the end of the day. Please remember to clock out before you leave!',
+          new Notification('Punch Out Reminder', {
+            body: 'It is the end of the day. Please remember to punch out before you leave!',
           });
         }
       }
@@ -563,6 +577,78 @@ export default function WorkerDashboard() {
     if (streamRef.current) attachStream(streamRef.current);
   }, [status, enrollStatus, view]);
 
+  const handlePunchOut = async () => {
+    setActionType('clock-out');
+    setStatus('processing');
+    setMessage('Punching out...');
+    try {
+      let location;
+      try {
+        location = await getCurrentLocation();
+        
+        let isWithinAnySite = false;
+        let closestDistance = Infinity;
+        for (const site of sites) {
+          const distance = getDistance(location.lat, location.lng, site.lat, site.lng);
+          if (distance < closestDistance) closestDistance = distance;
+          if (distance <= site.radius) {
+            isWithinAnySite = true;
+            break;
+          }
+        }
+        
+        if (!isWithinAnySite) {
+          fetch('/api/alerts', { 
+             method: 'POST', 
+             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, 
+             body: JSON.stringify({ type: 'geo-breach', message: `Geo-fence breach attempt: Worker tried to punch out outside all active site bounds (Nearest was ${Math.round(closestDistance)}m away).` })
+          }).catch(console.error);
+          throw new Error(`Too far from any site (Closest is ${Math.round(closestDistance)}m away)`);
+        }
+      } catch (geoErr: any) {
+        throw new Error(geoErr.message || 'Location verification failed');
+      }
+
+      const record = {
+        status: 'clock-out' as const,
+        location,
+        faceConfidence: 1, // Bypassed face check
+        timestamp: new Date().toISOString(),
+      };
+
+      if (navigator.onLine) {
+        try {
+          const attRes = await fetch('/api/attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(record),
+          });
+          if (!attRes.ok) throw new Error('Failed to record attendance');
+          setHistory(prev => [record, ...prev]);
+          fetchHistory();
+        } catch (fetchErr: any) {
+          if (fetchErr.message === 'Failed to fetch' || fetchErr.name === 'TypeError') {
+            addToQueue(record);
+            setHistory(prev => [record, ...prev]);
+          } else {
+            throw fetchErr;
+          }
+        }
+      } else {
+        addToQueue(record);
+        setHistory(prev => [record, ...prev]);
+      }
+      
+      setStatus('success');
+      setMessage('Successfully Punched Out');
+      setTimeout(() => setStatus('idle'), 3000);
+    } catch (err: any) {
+      setStatus('error');
+      setMessage(err.message || 'An unexpected error occurred');
+      if (!err.message || !err.message.toLowerCase().includes('denied')) { setTimeout(() => setStatus('idle'), 4000); }
+    }
+  };
+
   const startCamera = async (type: 'clock-in' | 'clock-out') => {
     stopCamera();
     setActionType(type);
@@ -688,7 +774,7 @@ export default function WorkerDashboard() {
           fetch('/api/alerts', {
              method: 'POST',
              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-             body: JSON.stringify({ type: 'geo-breach', message: `Geo-fence breach attempt: Worker tried to clock ${actionType} outside active site bounds (Nearest was ${Math.round(closestDistance)}m away).` })
+             body: JSON.stringify({ type: 'geo-breach', message: `Geo-fence breach attempt: Worker tried to punch ${actionType} outside active site bounds (Nearest was ${Math.round(closestDistance)}m away).` })
           }).catch(console.error);
           throw new Error(`Too far from any site (Closest is ${Math.round(closestDistance)}m away)`);
         }
@@ -751,7 +837,7 @@ export default function WorkerDashboard() {
         setHistory(prev => [record, ...prev]);
       }
       setStatus('success');
-      setMessage(`Successfully ${actionType === 'clock-in' ? 'Clocked In' : 'Clocked Out'}`);
+      setMessage(`Successfully ${actionType === 'clock-in' ? 'Punched In' : 'Punched Out'}`);
       setTimeout(() => setStatus('idle'), 3000);
     } catch (err: any) {
       stopCamera();
@@ -771,19 +857,7 @@ export default function WorkerDashboard() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_DIM = 640;
-        let w = img.width;
-        let h = img.height;
-        if (w > MAX_DIM || h > MAX_DIM) {
-          if (w > h) { h = Math.round((h * MAX_DIM) / w); w = MAX_DIM; }
-          else { w = Math.round((w * MAX_DIM) / h); h = MAX_DIM; }
-        }
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) ctx.drawImage(img, 0, 0, w, h);
-        processCapturedCanvas(canvas);
+        processCapturedCanvas(img);
       };
       img.src = ev.target?.result as string;
     };
@@ -892,7 +966,7 @@ export default function WorkerDashboard() {
           fetch('/api/alerts', {
              method: 'POST',
              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-             body: JSON.stringify({ type: 'geo-breach', message: `Geo-fence breach attempt: Worker tried to clock ${actionType} outside all active site bounds (Nearest was ${Math.round(closestDistance)}m away).` })
+             body: JSON.stringify({ type: 'geo-breach', message: `Geo-fence breach attempt: Worker tried to punch ${actionType} outside all active site bounds (Nearest was ${Math.round(closestDistance)}m away).` })
           }).catch(console.error);
 
           throw new Error(`Too far from any site (Closest is ${Math.round(closestDistance)}m away)`);
@@ -985,7 +1059,7 @@ export default function WorkerDashboard() {
       }
 
       setStatus('success');
-      setMessage(`Successfully ${actionType === 'clock-in' ? 'Clocked In' : 'Clocked Out'}`);
+      setMessage(`Successfully ${actionType === 'clock-in' ? 'Punched In' : 'Punched Out'}`);
       setTimeout(() => setStatus('idle'), 3000);
 
     } catch (err: any) {
@@ -1015,7 +1089,17 @@ export default function WorkerDashboard() {
             </div>
           )}
           <div>
-            <h1 className="text-xl font-bold">Hello, {user?.name}</h1>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <h1 className="text-xl font-bold">Hello, {user?.name}</h1>
+              <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border w-max ${
+                isOnline 
+                  ? 'bg-success/10 text-success border-success/20' 
+                  : 'bg-warning/10 text-warning border-warning/20'
+              }`}>
+                {isOnline ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
+                {isOnline ? 'Sync Mode' : 'Offline Mode'}
+              </div>
+            </div>
             <div className="flex items-center gap-2 mt-1">
               <a href="https://www.glassfabsystems.com/" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-accent uppercase hover:opacity-80 transition-opacity">Glass Fab Systems</a>
               <span className="text-text-s text-sm">• {new Date().toLocaleDateString()}</span>
@@ -1070,7 +1154,7 @@ export default function WorkerDashboard() {
               const isPastDay = isBefore(day, today) && !isSameDay(day, today);
               
               if (clockedIn) presentDays++;
-              else if (isPastDay && day.getDay() !== 0) absentDays++; // Assuming Sunday (0) is not counted as absent if no clock in
+              else if (isPastDay && day.getDay() !== 0) absentDays++; // Assuming Sunday (0) is not counted as absent if no punch in
 
               return { day, clockedIn, clockedOut, isPastDay, dayRecords };
             });
@@ -1230,7 +1314,7 @@ export default function WorkerDashboard() {
                               <ScanFace className="w-12 h-12 text-warning mx-auto" />
                               <div>
                                 <h4 className="text-lg font-semibold text-warning">Enroll Your Face</h4>
-                                <p className="text-sm text-warning/80 mt-1">Set up facial recognition to quickly and securely log in and clock your attendance.</p>
+                                <p className="text-sm text-warning/80 mt-1">Set up facial recognition to quickly and securely log in and record your attendance.</p>
                               </div>
                               <Button type="button" className="w-full bg-warning hover:bg-warning/90 text-yellow-950 font-bold" size="lg" onClick={startEnrollCamera}>
                                 Start Face Scan
@@ -1437,7 +1521,7 @@ export default function WorkerDashboard() {
                               
                               rows.push([]);
                               rows.push(['ATTENDANCE LOGS FOR WORKER']);
-                              rows.push(['Month', 'Date', 'Clock In', 'Clock Out', 'Total Hours', 'Daily Wage', 'OTT Allowance (Hours)']);
+                              rows.push(['Month', 'Date', 'Punch In', 'Punch Out', 'Total Hours', 'Daily Wage', 'OTT Allowance (Hours)']);
                               
                               // Group history by date
                               const grouped: Record<string, { month: string, date: string, clockIn: string, clockOut: string, hours: number, timestamp: number }> = {};
@@ -1545,16 +1629,16 @@ export default function WorkerDashboard() {
                     onClick={() => startCamera('clock-in')}
                   >
                     <MapPin className="w-8 h-8" />
-                    <span>Clock In</span>
+                    <span>Punch In</span>
                   </Button>
                 ) : (
                   <Button
                     size="lg"
                     className="h-32 flex-col gap-3 bg-warning/10 text-warning hover:bg-warning/20 border border-warning/20 w-full"
-                    onClick={() => startCamera('clock-out')}
+                    onClick={() => handlePunchOut()}
                   >
                     <LogOut className="w-8 h-8" />
-                    <span>Clock Out</span>
+                    <span>Punch Out</span>
                   </Button>
                 )}
               </div>

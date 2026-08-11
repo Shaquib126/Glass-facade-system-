@@ -266,11 +266,11 @@ export default function AdminDashboard() {
       });
       if (res.ok) {
         fetchFilteredAttendance();
-        setShowNotificationToast({ message: 'Successfully clocked in user.', show: true });
+        setShowNotificationToast({ message: 'Successfully punched in user.', show: true });
         setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
       } else {
         const data = await res.json();
-        showToastMsg(data.message || 'Failed to clock in user');
+        showToastMsg(data.message || 'Failed to punch in user');
       }
     } catch (err) {
       console.error(err);
@@ -289,11 +289,11 @@ export default function AdminDashboard() {
       });
       if (res.ok) {
         fetchFilteredAttendance();
-        setShowNotificationToast({ message: 'Successfully clocked out user.', show: true });
+        setShowNotificationToast({ message: 'Successfully punched out user.', show: true });
         setTimeout(() => setShowNotificationToast({ message: '', show: false }), 3000);
       } else {
         const data = await res.json();
-        showToastMsg(data.message || 'Failed to clock out user');
+        showToastMsg(data.message || 'Failed to punch out user');
       }
     } catch (err) {
       console.error(err);
@@ -1228,9 +1228,9 @@ export default function AdminDashboard() {
                             <div className="flex items-center gap-2">
                               <div className="text-[12px] text-text-s truncate">
                                 {record.status === 'clock-in' ? (
-                                  <span className="text-success font-medium">Clocked In</span>
+                                  <span className="text-success font-medium">Punched In</span>
                                 ) : (
-                                  <span className="text-red-400 font-medium">Clocked Out</span>
+                                  <span className="text-red-400 font-medium">Punched Out</span>
                                 )}
                               </div>
                               {record.workedHours !== undefined && (
@@ -1595,8 +1595,8 @@ export default function AdminDashboard() {
                   value={attendanceEditForm.status}
                   onChange={(e) => setAttendanceEditForm({...attendanceEditForm, status: e.target.value})}
                 >
-                  <option value="clock-in">Clock In</option>
-                  <option value="clock-out">Clock Out</option>
+                  <option value="clock-in">Punch In</option>
+                  <option value="clock-out">Punch Out</option>
                 </select>
               </div>
               <div className="space-y-2">
@@ -1844,7 +1844,7 @@ export default function AdminDashboard() {
                         <div key={i} className="flex justify-between items-center p-3">
                           <div>
                             <p className={`text-xs font-medium ${record.status === 'clock-in' ? 'text-success' : 'text-red-400'}`}>
-                              {record.status === 'clock-in' ? 'Clocked In' : 'Clocked Out'}
+                              {record.status === 'clock-in' ? 'Punched In' : 'Punched Out'}
                             </p>
                             <p className="text-[10px] text-text-s mt-0.5">{format(new Date(record.timestamp), 'MMM dd, yyyy hh:mm a')}</p>
                           </div>
@@ -1869,11 +1869,11 @@ export default function AdminDashboard() {
                   <div className="grid grid-cols-2 gap-2">
                     {!attendance.some(a => a.userId === selectedUser._id && a.status === 'clock-in' && new Date(a.timestamp).toDateString() === new Date().toDateString()) ? (
                       <Button variant="outline" className="justify-start gap-2 border-success/30 text-success hover:bg-success/10" onClick={() => handleAdminClockIn(selectedUser._id)}>
-                        <CheckCircle className="w-4 h-4" /> Force Clock In
+                        <CheckCircle className="w-4 h-4" /> Force Punch In
                       </Button>
                     ) : (
                       <Button variant="outline" className="justify-start gap-2 border-red-500/30 text-red-500 hover:bg-red-500/10" onClick={() => handleAdminClockOut(selectedUser._id)}>
-                        <LogOut className="w-4 h-4" /> Force Clock Out
+                        <LogOut className="w-4 h-4" /> Force Punch Out
                       </Button>
                     )}
                     
@@ -1930,7 +1930,7 @@ export default function AdminDashboard() {
                         <div key={i} className="flex justify-between items-center p-3 hover:bg-card-border/10 transition-colors">
                           <div>
                             <p className={`text-[13px] font-medium ${record.status === 'clock-in' ? 'text-success' : 'text-red-400'}`}>
-                              {record.status === 'clock-in' ? 'Clocked In' : 'Clocked Out'}
+                              {record.status === 'clock-in' ? 'Punched In' : 'Punched Out'}
                             </p>
                             <p className="text-[11px] text-text-s mt-0.5">{format(new Date(record.timestamp), 'MMM dd, yyyy hh:mm a')}</p>
                           </div>

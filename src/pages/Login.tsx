@@ -4,13 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HardHat, ScanFace, Camera, XCircle, Moon, Sun } from 'lucide-react';
+import { HardHat, ScanFace, Camera, XCircle, Moon, Sun, Upload } from 'lucide-react';
 import { getFaceDescriptor, loadModels } from '../lib/faceApi';
 
 
 const Lamp = ({ isDark, toggleTheme }: { isDark: boolean, toggleTheme: () => void }) => {
   return (
-    <div className="absolute top-0 left-1/2 -translate-x-1/2 md:left-24 md:translate-x-0 h-64 flex flex-col items-center z-[100] hidden sm:flex">
+    <div className="absolute top-0 left-1/2 -translate-x-1/2 md:left-24 md:translate-x-0 h-64 flex flex-col items-center z-[100] flex">
       {/* Wire */}
       <div className="w-1 h-12 md:h-24 bg-gray-800 dark:bg-gray-400 transition-colors duration-500"></div>
       
@@ -80,6 +80,7 @@ export default function Login() {
     setIsDark(document.documentElement.classList.contains('dark'));
   };
 
+  const cameraFileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -218,6 +219,46 @@ export default function Login() {
     }
   };
 
+  const handleCameraFallbackFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      img.onload = async () => {
+        setStatus('processing');
+        setError('');
+        try {
+          const descriptor = await getFaceDescriptor(img);
+          stopCamera();
+          if (!descriptor) {
+            throw new Error('No face detected. Please try again.');
+          }
+
+          const res = await fetch('/api/auth/login-face', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, faceDescriptor: Array.from(descriptor) }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.message || 'Face login failed');
+          
+          console.log(`[Login] Successful Face Verification. Distance: ${data.distance?.toFixed(4)}. Confidence: ${(1 - data.distance)?.toFixed(4)}`);
+          setAuth(data.token, data.user);
+        } catch (err: any) {
+          stopCamera();
+          setStatus('idle');
+          setError(err.message);
+        }
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   const handleFaceCapture = async () => {
     if (!videoRef.current) return;
 
@@ -274,7 +315,7 @@ export default function Login() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md relative z-10"
+        className="w-full max-w-md relative z-10 mt-24 md:mt-0"
       >
         <div className="flex flex-col items-center mb-8">
           <div className="w-16 h-16 bg-accent rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-accent/20">
@@ -509,28 +550,51 @@ export default function Login() {
                   <p className="text-center text-text-s">
                     {status === 'processing' ? 'Verifying identity...' : 'Position your face in the frame'}
                   </p>
-                  <div className="flex gap-4 w-full">
+                  
+                  <input
+                    type="file"
+                    ref={cameraFileInputRef}
+                    accept="image/*"
+                    capture="user"
+                    onChange={handleCameraFallbackFileSelect}
+                    className="hidden"
+                  />
+
+                  <div className="flex flex-col gap-2.5 w-full">
+                    <div className="flex gap-3 w-full">
+                      <Button 
+                        variant="outline" 
+                        className="flex-1" 
+                        onClick={() => { stopCamera(); setStatus('idle'); }}
+                        disabled={status === 'processing'}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        className="flex-1 bg-accent hover:bg-accent/90 text-black" 
+                        onClick={handleFaceCapture}
+                        disabled={status === 'processing'}
+                      >
+                        {status === 'processing' ? (
+                          <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <Camera className="w-5 h-5 mr-2" />
+                            Verify
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    
                     <Button 
-                      variant="outline" 
-                      className="flex-1" 
-                      onClick={() => { stopCamera(); setStatus('idle'); }}
+                      variant="ghost" 
+                      size="sm" 
+                      className="w-full text-xs text-accent hover:bg-accent/10"
+                      onClick={() => cameraFileInputRef.current?.click()}
                       disabled={status === 'processing'}
                     >
-                      Cancel
-                    </Button>
-                    <Button 
-                      className="flex-1 bg-accent hover:bg-accent/90 text-black" 
-                      onClick={handleFaceCapture}
-                      disabled={status === 'processing'}
-                    >
-                      {status === 'processing' ? (
-                        <div className="w-5 h-5 border-2 border-black/20 border-t-black rounded-full animate-spin" />
-                      ) : (
-                        <>
-                          <Camera className="w-5 h-5 mr-2" />
-                          Verify
-                        </>
-                      )}
+                      <Upload className="w-4 h-4 mr-2" /> 
+                      Upload Photo Instead
                     </Button>
                   </div>
                 </motion.div>

@@ -17,7 +17,7 @@ export default function App() {
   useEffect(() => {
     if (!token || !user) return;
     
-    // Auto clock-out and logout at 10 PM (22:00)
+    // Auto punch-out and logout at 10 PM (22:00)
     const checkTime = setInterval(async () => {
       const now = new Date();
       if (now.getHours() === 22 && now.getMinutes() === 0) {
@@ -36,7 +36,7 @@ export default function App() {
             })
           });
         } catch (e) {
-          console.error('Auto clock-out failed', e);
+          console.error('Auto punch-out failed', e);
         }
         logout();
       }

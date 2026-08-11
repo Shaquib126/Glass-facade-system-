@@ -19,7 +19,7 @@ export const loadModels = async () => {
     ]);
 
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Face models load timeout. Please check your internet connection.')), 15000);
+      setTimeout(() => reject(new Error('Face models load timeout. Please check your internet connection.')), 30000);
     });
 
     await Promise.race([loadPromise, timeoutPromise]);
@@ -33,68 +33,38 @@ export const loadModels = async () => {
 export const getFaceDescriptor = async (mediaEl: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement) => {
   if (!modelsLoaded) await loadModels();
 
+  let targetEl: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement = mediaEl;
+
+  // Scale down image if it's too large to prevent memory issues and speed up landmark/descriptor extraction
   if (mediaEl instanceof HTMLImageElement) {
     const canvas = document.createElement('canvas');
     const MAX_DIM = 640;
-    let w = mediaEl.width || 640;
-    let h = mediaEl.height || 640;
+    
+    // Always use naturalWidth/naturalHeight for images not in DOM
+    let w = mediaEl.naturalWidth || mediaEl.width || 640;
+    let h = mediaEl.naturalHeight || mediaEl.height || 640;
+
     if (w > MAX_DIM || h > MAX_DIM) {
       if (w > h) { h = Math.round((h * MAX_DIM) / w); w = MAX_DIM; }
       else { w = Math.round((w * MAX_DIM) / h); h = MAX_DIM; }
     }
 
-    // Try multiple rotations to account for mobile EXIF orientation
-    for (let angle of [0, 90, 180, 270]) {
-      if (angle === 0 || angle === 180) {
-        canvas.width = w;
-        canvas.height = h;
-      } else {
-        canvas.width = h;
-        canvas.height = w;
-      }
-      
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate((angle * Math.PI) / 180);
-        ctx.drawImage(mediaEl, -w / 2, -h / 2, w, h);
-        ctx.restore();
-      }
-
-      const detectionPromise = faceapi
-        .detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-
-      const timeoutPromise = new Promise<undefined>((_, reject) => {
-        setTimeout(() => reject(new Error('Face detection taking longer than expected. Please ensure your face is clearly visible and well-lit.')), 10000);
-      });
-
-      try {
-        const detection = await Promise.race([detectionPromise, timeoutPromise]) as any;
-        if (detection?.descriptor) {
-          return detection.descriptor;
-        }
-      } catch (err: any) {
-        // If there's a timeout error, we throw it right away to avoid waiting 40s
-        if (err.message && err.message.includes('taking longer than expected')) {
-          throw err;
-        }
-      }
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(mediaEl, 0, 0, w, h);
+      targetEl = canvas;
     }
-    return undefined;
   }
 
-  // Fallback for Video or Canvas
   const detectionPromise = faceapi
-    .detectSingleFace(mediaEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
+    .detectSingleFace(targetEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.3 }))
     .withFaceLandmarks()
     .withFaceDescriptor();
 
   const timeoutPromise = new Promise<undefined>((_, reject) => {
-    setTimeout(() => reject(new Error('Face detection taking longer than expected. Please ensure your face is clearly visible and well-lit.')), 15000);
+    setTimeout(() => reject(new Error('Face detection taking longer than expected. Please ensure your face is clearly visible and well-lit.')), 30000);
   });
 
   const detection = await Promise.race([detectionPromise, timeoutPromise]) as any;

@@ -1,9 +1,10 @@
 const fs = require('fs');
 let code = fs.readFileSync('src/pages/WorkerDashboard.tsx', 'utf8');
 
-const oldCamera = `  const handleCameraFallbackFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+const oldCode = `  const handleCameraFallbackFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const img = new Image();
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -28,14 +29,14 @@ const oldCamera = `  const handleCameraFallbackFileSelect = (e: React.ChangeEven
     e.target.value = '';
   };`;
 
-const newCamera = `  const handleCameraFallbackFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+const newCode = `  const handleCameraFallbackFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const img = new Image();
     const reader = new FileReader();
     reader.onload = (ev) => {
       img.onload = () => {
-        // Pass img directly; faceApi downscales it and handles EXIF rotation.
         processCapturedCanvas(img);
       };
       img.src = ev.target?.result as string;
@@ -44,6 +45,6 @@ const newCamera = `  const handleCameraFallbackFileSelect = (e: React.ChangeEven
     e.target.value = '';
   };`;
 
-code = code.replace(oldCamera, newCamera);
+code = code.replace(oldCode, newCode);
 fs.writeFileSync('src/pages/WorkerDashboard.tsx', code);
-console.log('done updating handleCameraFallbackFileSelect');
+console.log('done fixing handleCameraFallbackFileSelect');

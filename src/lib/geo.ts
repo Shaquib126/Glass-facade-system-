@@ -31,7 +31,7 @@ export const getCurrentLocation = (): Promise<{ lat: number; lng: number }> => {
           resolved = true;
           clearTimeout(fallbackTimeout);
           if (error.code === error.PERMISSION_DENIED) {
-            reject(new Error('Location permission denied. Please allow location access to clock in.'));
+            reject(new Error('Location permission denied. Please allow location access to punch in.'));
           } else {
             reject(error);
           }
