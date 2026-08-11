@@ -1632,6 +1632,7 @@ export default function WorkerDashboard() {
                     <span>Punch In</span>
                   </Button>
                 ) : (
+                  <div>
                   <Button
                     size="lg"
                     className="h-32 flex-col gap-3 bg-warning/10 text-warning hover:bg-warning/20 border border-warning/20 w-full"
@@ -1640,6 +1641,8 @@ export default function WorkerDashboard() {
                     <LogOut className="w-8 h-8" />
                     <span>Punch Out</span>
                   </Button>
+                  <p className="text-center text-xs text-text-s mt-2">Click here Punch out without face</p>
+                  </div>
                 )}
               </div>
               
@@ -1684,14 +1687,6 @@ export default function WorkerDashboard() {
                 
                 <p className="text-center text-text-s text-xs max-w-xs">{message}<br/><span className="text-text-muted">Tap the black frame if camera is stuck</span></p>
                 
-                <input
-                  type="file"
-                  ref={cameraFileInputRef}
-                  accept="image/*"
-                  capture="user"
-                  onChange={handleCameraFallbackFileSelect}
-                  className="hidden"
-                />
                 <div className="flex flex-col gap-2.5 w-full">
                   <Button className="w-full bg-accent hover:bg-accent/90 text-btn-text font-bold py-6 text-lg" onClick={handleCapture}>
                     <Camera className="w-5 h-5 mr-2" />
@@ -1709,14 +1704,7 @@ export default function WorkerDashboard() {
                       <RotateCw className="w-3.5 h-3.5 mr-1" /> Restart Camera
                     </Button>
                     
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="flex-1 text-xs text-accent hover:bg-accent/10"
-                      onClick={() => cameraFileInputRef.current?.click()}
-                    >
-                      <Upload className="w-3.5 h-3.5 mr-1" /> Upload Photo
-                    </Button>
+                    
                   </div>
                 </div>
               </motion.div>
