@@ -8,9 +8,21 @@ import { HardHat, ScanFace, Camera, XCircle, Moon, Sun, Upload } from 'lucide-re
 import { getFaceDescriptor, loadModels } from '../lib/faceApi';
 
 
-const Lamp = ({ isDark, toggleTheme }: { isDark: boolean, toggleTheme: () => void }) => {
+const Lamp = ({ isDark, toggleTheme, onSwipeDown, onSwipeUp }: { isDark: boolean, toggleTheme: () => void, onSwipeDown: () => void, onSwipeUp: () => void }) => {
   return (
-    <div className="absolute top-0 left-1/2 -translate-x-1/2 md:left-24 md:translate-x-0 h-64 flex flex-col items-center z-[100] flex">
+    <motion.div 
+      className="absolute top-0 left-1/2 -translate-x-1/2 md:left-24 md:translate-x-0 h-64 flex flex-col items-center z-[100] flex cursor-grab active:cursor-grabbing"
+      drag="y"
+      dragConstraints={{ top: 0, bottom: 0 }}
+      dragElastic={0.4}
+      onDragEnd={(e, info) => {
+        if (info.offset.y > 20) {
+          onSwipeDown();
+        } else if (info.offset.y < -20) {
+          onSwipeUp();
+        }
+      }}
+    >
       {/* Wire */}
       <div className="w-1 h-12 md:h-24 bg-gray-800 dark:bg-gray-400 transition-colors duration-500"></div>
       
@@ -57,7 +69,7 @@ const Lamp = ({ isDark, toggleTheme }: { isDark: boolean, toggleTheme: () => voi
         <div className="w-0.5 h-16 md:h-24 bg-gray-400"></div>
         <div className="w-3 h-3 md:w-4 md:h-4 rounded-full bg-accent shadow-sm"></div>
       </motion.div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -68,6 +80,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'camera' | 'processing' | 'forgot-password'>('idle');
   const [loginType, setLoginType] = useState<'worker' | 'admin'>('worker');
+  const [isPanelVisible, setIsPanelVisible] = useState(true);
   const [resetMessage, setResetMessage] = useState<React.ReactNode>('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
@@ -301,7 +314,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-bg relative overflow-hidden transition-colors duration-500">
-      <Lamp isDark={isDark} toggleTheme={toggleTheme} />
+      <Lamp isDark={isDark} toggleTheme={toggleTheme} onSwipeDown={() => setIsPanelVisible(false)} onSwipeUp={() => setIsPanelVisible(true)} />
       {/* Theme Toggle for Mobile */}
       <div className="absolute top-4 right-4 z-50 sm:hidden">
         <Button variant="ghost" size="icon" onClick={toggleTheme}>
@@ -312,11 +325,15 @@ export default function Login() {
       {/* Background glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-accent/10 rounded-full blur-[120px] pointer-events-none" />
       
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md relative z-10 mt-24 md:mt-0"
-      >
+      <AnimatePresence>
+        {isPanelVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 100 }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="w-full max-w-md relative z-10 mt-24 md:mt-0"
+          >
         <div className="flex flex-col items-center mb-8">
           <div className="w-16 h-16 bg-accent rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-accent/20">
             <HardHat className="w-8 h-8 text-black" />
@@ -602,7 +619,9 @@ export default function Login() {
             </AnimatePresence>
           </CardContent>
         </Card>
-      </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
