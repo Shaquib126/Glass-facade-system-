@@ -1641,7 +1641,10 @@ export default function WorkerDashboard() {
                     <LogOut className="w-8 h-8" />
                     <span>Punch Out</span>
                   </Button>
-                  <p className="text-center text-xs text-text-s mt-2">Click here Punch out without face</p>
+                  <div className="flex flex-col items-center mt-3 gap-1">
+                    <span className="text-text-muted text-[10px] font-bold uppercase tracking-widest">or</span>
+                    <p className="text-center text-xs text-text-s hover:text-text-p cursor-pointer transition-colors" onClick={() => handlePunchOut()}>Click here Punch out</p>
+                  </div>
                   </div>
                 )}
               </div>
