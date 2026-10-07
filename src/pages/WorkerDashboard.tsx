@@ -649,6 +649,92 @@ export default function WorkerDashboard() {
     }
   };
 
+  const handlePunchIn = async () => {
+    setActionType('clock-in');
+    setStatus('processing');
+    setMessage('Accepting attendance (1-Click)...');
+    try {
+      let location;
+      try {
+        location = await getCurrentLocation();
+        
+        let isWithinAnySite = false;
+        let closestDistance = Infinity;
+        for (const site of sites) {
+          const distance = getDistance(location.lat, location.lng, site.lat, site.lng);
+          if (distance < closestDistance) closestDistance = distance;
+          if (distance <= site.radius) {
+            isWithinAnySite = true;
+            break;
+          }
+        }
+        
+        if (sites.length > 0 && !isWithinAnySite) {
+          fetch('/api/alerts', { 
+             method: 'POST', 
+             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, 
+             body: JSON.stringify({ type: 'geo-breach', message: `Geo-fence breach attempt: Worker tried to punch in outside all active site bounds (Nearest was ${Math.round(closestDistance)}m away).` })
+          }).catch(console.error);
+          throw new Error(`Too far from any site (Closest is ${Math.round(closestDistance)}m away)`);
+        }
+      } catch (geoErr: any) {
+        if (geoErr.message && (geoErr.message.toLowerCase().includes('too far') || geoErr.message.toLowerCase().includes('denied'))) {
+          throw geoErr;
+        }
+        console.warn('Geolocation fallback:', geoErr);
+        location = { lat: SITE_LOCATION.lat, lng: SITE_LOCATION.lng };
+      }
+
+      // Check for unusual activity hours (before 5 AM or after 8 PM)
+      const currentHour = new Date().getHours();
+      if (currentHour < 5 || currentHour > 20) {
+        fetch('/api/alerts', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+           body: JSON.stringify({ type: 'unusual-time', message: `Unusual time: Worker clocked in at ${format(new Date(), 'hh:mm a')}.` })
+        }).catch(console.error);
+      }
+
+      const record = {
+        status: 'clock-in' as const,
+        location,
+        faceConfidence: 1, // 1-Click attendance verified without face scan
+        timestamp: new Date().toISOString(),
+      };
+
+      if (navigator.onLine) {
+        try {
+          const attRes = await fetch('/api/attendance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(record),
+          });
+          if (!attRes.ok) throw new Error('Failed to record attendance');
+          setHistory(prev => [record, ...prev]);
+          fetchHistory();
+        } catch (fetchErr: any) {
+          if (fetchErr.message === 'Failed to fetch' || fetchErr.name === 'TypeError') {
+            addToQueue(record);
+            setHistory(prev => [record, ...prev]);
+          } else {
+            throw fetchErr;
+          }
+        }
+      } else {
+        addToQueue(record);
+        setHistory(prev => [record, ...prev]);
+      }
+      
+      setStatus('success');
+      setMessage('Attendance Accepted! Successfully Punched In');
+      setTimeout(() => setStatus('idle'), 3000);
+    } catch (err: any) {
+      setStatus('error');
+      setMessage(err.message || 'An unexpected error occurred');
+      if (!err.message || !err.message.toLowerCase().includes('denied')) { setTimeout(() => setStatus('idle'), 4000); }
+    }
+  };
+
   const startCamera = async (type: 'clock-in' | 'clock-out') => {
     stopCamera();
     setActionType(type);
@@ -1608,43 +1694,60 @@ export default function WorkerDashboard() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="space-y-6"
             >
-              {!user?.hasFaceDescriptor && (
-                 <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 flex flex-col items-center text-center gap-3">
-                    <ScanFace className="w-10 h-10 text-warning" />
-                    <div>
-                      <h3 className="font-semibold text-warning text-sm">Face Login Missing</h3>
-                      <p className="text-xs text-text-s mt-1">Enroll your face to securely log in and record your attendance.</p>
-                    </div>
-                    <Button onClick={() => setView('profile')} size="sm" className="bg-warning hover:bg-warning/90 text-yellow-950 w-full font-bold">
-                       Go To Enroll
-                    </Button>
-                 </div>
-              )}
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-success animate-pulse"></span>
+                  <span className="text-xs font-semibold text-text-p uppercase tracking-wider">Attendance Panel</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-accent/10 text-accent border border-accent/20">
+                  <span>⚡ 1-Click Attendance Active</span>
+                </div>
+              </div>
 
               <div className={`grid gap-4 ${(!history[0] || history[0].status !== 'clock-in') ? 'grid-cols-1' : 'grid-cols-1'}`}>
                 {(!history[0] || history[0].status !== 'clock-in') ? (
-                  <Button
-                    size="lg"
-                    className="h-32 flex-col gap-3 bg-success/10 text-success hover:bg-success/20 border border-success/20 w-full"
-                    onClick={() => startCamera('clock-in')}
-                  >
-                    <MapPin className="w-8 h-8" />
-                    <span>Punch In</span>
-                  </Button>
+                  <div>
+                    <Button
+                      size="lg"
+                      className="h-32 flex-col gap-2.5 bg-success/15 text-success hover:bg-success/25 border-2 border-success/30 w-full transition-all active:scale-[0.99] shadow-lg shadow-success/5"
+                      onClick={() => handlePunchIn()}
+                    >
+                      <div className="flex items-center justify-center w-12 h-12 rounded-full bg-success/20">
+                        <MapPin className="w-6 h-6 text-success" />
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-xl font-bold tracking-wide">Punch In</span>
+                        <span className="text-xs font-semibold text-success/80">1-Click Accept Attendance</span>
+                      </div>
+                    </Button>
+                    <div className="flex flex-col items-center mt-3 gap-1">
+                      <span className="text-text-muted text-[10px] font-bold uppercase tracking-widest">or</span>
+                      <p className="text-center text-xs font-medium text-text-s hover:text-success cursor-pointer transition-colors" onClick={() => handlePunchIn()}>
+                        Click here Accept attendance
+                      </p>
+                    </div>
+                  </div>
                 ) : (
                   <div>
-                  <Button
-                    size="lg"
-                    className="h-32 flex-col gap-3 bg-warning/10 text-warning hover:bg-warning/20 border border-warning/20 w-full"
-                    onClick={() => handlePunchOut()}
-                  >
-                    <LogOut className="w-8 h-8" />
-                    <span>Punch Out</span>
-                  </Button>
-                  <div className="flex flex-col items-center mt-3 gap-1">
-                    <span className="text-text-muted text-[10px] font-bold uppercase tracking-widest">or</span>
-                    <p className="text-center text-xs text-text-s hover:text-text-p cursor-pointer transition-colors" onClick={() => handlePunchOut()}>Click here Punch out</p>
-                  </div>
+                    <Button
+                      size="lg"
+                      className="h-32 flex-col gap-2.5 bg-warning/15 text-warning hover:bg-warning/25 border-2 border-warning/30 w-full transition-all active:scale-[0.99] shadow-lg shadow-warning/5"
+                      onClick={() => handlePunchOut()}
+                    >
+                      <div className="flex items-center justify-center w-12 h-12 rounded-full bg-warning/20">
+                        <LogOut className="w-6 h-6 text-warning" />
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-xl font-bold tracking-wide">Punch Out</span>
+                        <span className="text-xs font-semibold text-warning/80">1-Click Accept Attendance</span>
+                      </div>
+                    </Button>
+                    <div className="flex flex-col items-center mt-3 gap-1">
+                      <span className="text-text-muted text-[10px] font-bold uppercase tracking-widest">or</span>
+                      <p className="text-center text-xs font-medium text-text-s hover:text-warning cursor-pointer transition-colors" onClick={() => handlePunchOut()}>
+                        Click here Punch out
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>
